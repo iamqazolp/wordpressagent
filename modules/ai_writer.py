@@ -4,11 +4,11 @@ Dùng Google Gemini để viết bài blog từ các tài liệu tham khảo.
 """
 from __future__ import annotations
 import logging
-import os
 import re
 from pathlib import Path
 
-import google.generativeai as genai  # type: ignore
+from google import genai
+from google.genai import types
 
 from config import settings
 
@@ -18,18 +18,17 @@ logger = logging.getLogger(__name__)
 PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "write_post.txt"
 
 # Model Gemini sử dụng
-GEMINI_MODEL = "gemini-1.5-pro"
+GEMINI_MODEL = "gemini-2.0-flash"
 
 
-def _get_model() -> genai.GenerativeModel:
+def _get_client() -> genai.Client:
     """Khởi tạo Gemini client."""
     if not settings.GEMINI_API_KEY:
         raise ValueError(
             "Chưa cấu hình GEMINI_API_KEY. "
             "Thêm dòng GEMINI_API_KEY=... vào file .env"
         )
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    return genai.GenerativeModel(GEMINI_MODEL)
+    return genai.Client(api_key=settings.GEMINI_API_KEY)
 
 
 def write_post(
@@ -79,16 +78,14 @@ def write_post(
     logger.info(f"Đang gọi Gemini để viết bài về: {product_name}")
 
     try:
-        model = _get_model()
-
-        generation_config = genai.types.GenerationConfig(
-            temperature=0.7,        # Cân bằng sáng tạo và chính xác
-            max_output_tokens=8192,
-        )
-
-        response = model.generate_content(
-            prompt,
-            generation_config=generation_config,
+        client = _get_client()
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.7,
+                max_output_tokens=8192,
+            ),
         )
         html_content = response.text.strip()
 
@@ -101,40 +98,33 @@ def write_post(
     html_content = re.sub(r"\s*```$", "", html_content)
     html_content = html_content.strip()
 
-    # Tạo tiêu đề từ product_name (AI có thể viết tiêu đề khác, nhưng dùng mặc định trước)
     title = _generate_title(product_name, html_content)
-
     logger.info(f"✓ Viết xong bài: {title}")
     return title, html_content
 
 
 def _generate_title(product_name: str, html_content: str) -> str:
-    """Cố gắng lấy tiêu đề từ H1 đầu tiên trong HTML, fallback về product_name."""
+    """Lấy tiêu đề từ H1 đầu tiên trong HTML, fallback về product_name."""
     h1_match = re.search(r"<h1[^>]*>(.*?)</h1>", html_content, re.IGNORECASE | re.DOTALL)
     if h1_match:
         title = re.sub(r"<[^>]+>", "", h1_match.group(1)).strip()
         if title:
             return title
-    # Tạo tiêu đề mặc định
     return f"{product_name.capitalize()} – Thông tin, đặc điểm và lưu ý khi chọn mua"
 
 
 def suggest_title(product_name: str) -> str:
-    """
-    Gọi Gemini để đề xuất 1 tiêu đề SEO cho bài viết.
-    Dùng trong UI để hiển thị title trước khi viết bài đầy đủ.
-    """
+    """Đề xuất 1 tiêu đề SEO cho bài viết."""
     if not settings.GEMINI_API_KEY:
         return f"{product_name} – Thông tin và đặc điểm"
-
     try:
-        model = _get_model()
+        client = _get_client()
         prompt = (
             f"Hãy viết 1 tiêu đề bài blog SEO bằng tiếng Việt về sản phẩm '{product_name}' "
             "cho website đèn trang trí nội thất. Tiêu đề ngắn gọn, hấp dẫn, dưới 70 ký tự. "
             "Chỉ trả lời tiêu đề, không giải thích thêm."
         )
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
         return response.text.strip().strip('"').strip("'")
     except Exception as e:
         logger.warning(f"Không tạo được tiêu đề gợi ý: {e}")

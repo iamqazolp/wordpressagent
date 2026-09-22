@@ -33,3 +33,5 @@ ENV/
 *.log
 tmp/
 temp/
+enter_spammer.py
+spam_enter.sh

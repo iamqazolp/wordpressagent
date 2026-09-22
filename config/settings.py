@@ -16,6 +16,8 @@ load_dotenv()
 
 # ── Google Gemini ────────────────────────────────────────────
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_BASE_URL = os.getenv("GEMINI_BASE_URL", "https://api.shopaikey.com")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 # ── SerpAPI (tìm kiếm Google) ────────────────────────────────
 SERP_API_KEY = os.getenv("SERP_API_KEY", "")
@@ -68,5 +70,5 @@ DEFAULT_SITE = list(SITES.keys())[0] if SITES else None
 # ── Cấu hình viết bài ────────────────────────────────────────
 SEARCH_RESULT_COUNT = 5          # Số bài tự tìm trên Google
 POST_STATUS = "draft"            # "draft" = nháp, "publish" = đăng thẳng
-CTA_PHONE = os.getenv("CTA_PHONE", "0915 241 697")
-CTA_ADDRESS = os.getenv("CTA_ADDRESS", "số 1 Trần Thủ Độ, Hoàng Mai, Hà Nội")
+CTA_PHONE = os.getenv("CTA_PHONE", "")
+CTA_ADDRESS = os.getenv("CTA_ADDRESS", "")

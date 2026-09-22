@@ -1,6 +1,6 @@
 """
 modules/ai_writer.py
-Dùng Google Gemini để viết bài blog từ các tài liệu tham khảo.
+Dùng Google Gemini để viết bài quảng cáo sản phẩm HTML hoàn chỉnh từ các tài liệu tham khảo.
 """
 from __future__ import annotations
 import logging
@@ -17,28 +17,33 @@ logger = logging.getLogger(__name__)
 # Đường dẫn file prompt template
 PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "write_post.txt"
 
-# Model Gemini sử dụng
-GEMINI_MODEL = "gemini-2.0-flash"
-
 
 def _get_client() -> genai.Client:
-    """Khởi tạo Gemini client."""
+    """Khởi tạo Gemini client hỗ trợ base_url tùy chỉnh (như shopaikey proxy)."""
     if not settings.GEMINI_API_KEY:
         raise ValueError(
             "Chưa cấu hình GEMINI_API_KEY. "
             "Thêm dòng GEMINI_API_KEY=... vào file .env"
         )
-    return genai.Client(api_key=settings.GEMINI_API_KEY)
+
+    http_options = None
+    if settings.GEMINI_BASE_URL:
+        http_options = types.HttpOptions(base_url=settings.GEMINI_BASE_URL)
+
+    return genai.Client(
+        api_key=settings.GEMINI_API_KEY,
+        http_options=http_options,
+    )
 
 
 def write_post(
     product_name: str,
     reference_contents: list[dict],
     image_count: int = 0,
-    site_name: str = "Kho Đèn Trang Trí",
+    site_name: str = "Website",
 ) -> tuple[str, str]:
     """
-    Dùng Gemini viết bài blog HTML hoàn chỉnh.
+    Dùng Gemini viết bài blog/quảng cáo sản phẩm HTML hoàn chỉnh với nhiều thành phần phong phú.
 
     Args:
         product_name:        Tên sản phẩm.
@@ -48,19 +53,18 @@ def write_post(
 
     Returns:
         Tuple (title: str, html_content: str)
-        - title: Tiêu đề bài viết do AI đề xuất
-        - html_content: Nội dung bài dạng HTML
+        - title: Tiêu đề bài viết
+        - html_content: Nội dung bài dạng HTML phong phú
     """
     # Ghép nội dung tham khảo
     if reference_contents:
         ref_text = ""
         for i, ref in enumerate(reference_contents, 1):
             ref_text += f"\n--- Nguồn {i}: {ref['url']} ---\n"
-            # Giới hạn mỗi nguồn tối đa 3000 ký tự để không vượt token limit
             ref_text += ref["content"][:3000]
             ref_text += "\n"
     else:
-        ref_text = "(Không có tài liệu tham khảo - hãy viết dựa trên kiến thức chung về sản phẩm này)"
+        ref_text = "(Không có tài liệu tham khảo - hãy viết dựa trên kiến thức chuyên môn về sản phẩm này)"
 
     # Đọc prompt template
     prompt_template = PROMPT_PATH.read_text(encoding="utf-8")
@@ -71,16 +75,14 @@ def write_post(
         site_name=site_name,
         reference_articles=ref_text,
         image_count=image_count,
-        cta_phone=settings.CTA_PHONE,
-        cta_address=settings.CTA_ADDRESS,
     )
 
-    logger.info(f"Đang gọi Gemini để viết bài về: {product_name}")
+    logger.info(f"Đang gọi Gemini ({settings.GEMINI_MODEL}) để viết bài về: {product_name}")
 
     try:
         client = _get_client()
         response = client.models.generate_content(
-            model=GEMINI_MODEL,
+            model=settings.GEMINI_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.7,
@@ -104,28 +106,31 @@ def write_post(
 
 
 def _generate_title(product_name: str, html_content: str) -> str:
-    """Lấy tiêu đề từ H1 đầu tiên trong HTML, fallback về product_name."""
+    """Lấy tiêu đề từ H1 đầu tiên trong HTML nếu có, fallback về tiêu đề chuẩn."""
     h1_match = re.search(r"<h1[^>]*>(.*?)</h1>", html_content, re.IGNORECASE | re.DOTALL)
     if h1_match:
         title = re.sub(r"<[^>]+>", "", h1_match.group(1)).strip()
         if title:
             return title
-    return f"{product_name.capitalize()} – Thông tin, đặc điểm và lưu ý khi chọn mua"
+    return f"{product_name.capitalize()} – Thông Số Kỹ Thuật, Đặc Điểm & Báo Giá Mới Nhất"
 
 
 def suggest_title(product_name: str) -> str:
-    """Đề xuất 1 tiêu đề SEO cho bài viết."""
+    """Đề xuất 1 tiêu đề SEO cho bài viết sản phẩm."""
     if not settings.GEMINI_API_KEY:
-        return f"{product_name} – Thông tin và đặc điểm"
+        return f"{product_name} – Thông Số Kỹ Thuật & Đánh Giá Chi Tiết"
     try:
         client = _get_client()
         prompt = (
-            f"Hãy viết 1 tiêu đề bài blog SEO bằng tiếng Việt về sản phẩm '{product_name}' "
-            "cho website đèn trang trí nội thất. Tiêu đề ngắn gọn, hấp dẫn, dưới 70 ký tự. "
-            "Chỉ trả lời tiêu đề, không giải thích thêm."
+            f"Hãy viết 1 tiêu đề bài viết giới thiệu/quảng cáo SEO bằng tiếng Việt về sản phẩm '{product_name}'. "
+            "Tiêu đề chuyên nghiệp, hấp dẫn, dưới 70 ký tự. "
+            "Chỉ trả lời duy nhất tiêu đề, không giải thích thêm."
         )
-        response = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
+        response = client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=prompt,
+        )
         return response.text.strip().strip('"').strip("'")
     except Exception as e:
         logger.warning(f"Không tạo được tiêu đề gợi ý: {e}")
-        return f"{product_name} – Thông tin và đặc điểm"
+        return f"{product_name} – Thông Số Kỹ Thuật & Đánh Giá Chi Tiết"

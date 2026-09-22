@@ -29,6 +29,76 @@ def _get_wp_auth(site_config: dict) -> HTTPBasicAuth:
     return HTTPBasicAuth(site_config["client_key"], site_config["client_secret"])
 
 
+def publish_product(
+    title: str,
+    html_content: str,
+    uploaded_images: list[dict],
+    site_config: dict,
+    status: str = "draft",
+    category_ids: list[int] | None = None,
+    regular_price: str = "",
+) -> dict:
+    """
+    Đăng sản phẩm lên WooCommerce qua REST API (/wp-json/wc/v3/products).
+    Sử dụng trực tiếp client_key và client_secret từ .env.
+    """
+    final_html = _replace_placeholders(html_content, uploaded_images)
+
+    # Tự động trích xuất bảng thông số kỹ thuật cho short_description
+    short_desc = ""
+    table_match = re.search(r"(<table>.*?</table>)", final_html, re.DOTALL | re.IGNORECASE)
+    if table_match:
+        short_desc = table_match.group(1)
+
+    base_url = site_config["url"].rstrip("/")
+    auth = HTTPBasicAuth(site_config["client_key"], site_config["client_secret"])
+    endpoint = f"{base_url}/wp-json/wc/v3/products"
+
+    payload: dict = {
+        "name": title,
+        "type": "simple",
+        "description": final_html,
+        "short_description": short_desc,
+        "status": status,
+    }
+
+    if regular_price:
+        payload["regular_price"] = str(regular_price)
+
+    if category_ids:
+        payload["categories"] = [{"id": cid} for cid in category_ids]
+
+    if uploaded_images:
+        payload["images"] = [{"src": img["url"]} for img in uploaded_images if "url" in img]
+
+    logger.info(f"Đang tạo sản phẩm WooCommerce tại {base_url} (status={status})...")
+
+    try:
+        response = requests.post(endpoint, auth=auth, json=payload, timeout=30)
+        response.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        logger.error(f"Lỗi HTTP khi tạo sản phẩm: {e}\n{response.text[:500]}")
+        raise
+    except Exception as e:
+        logger.error(f"Lỗi kết nối khi tạo sản phẩm: {e}")
+        raise
+
+    data = response.json()
+    product_id = data["id"]
+    product_url = data.get("permalink", f"{base_url}/?post_type=product&p={product_id}")
+    edit_url = f"{base_url}/wp-admin/post.php?post={product_id}&action=edit"
+
+    logger.info(f"✓ Đăng sản phẩm thành công! ID={product_id} | URL={product_url}")
+
+    return {
+        "post_id": product_id,
+        "post_url": product_url,
+        "edit_url": edit_url,
+        "status": status,
+        "type": "product",
+    }
+
+
 def publish_post(
     title: str,
     html_content: str,
@@ -38,20 +108,9 @@ def publish_post(
     category_ids: list[int] | None = None,
 ) -> dict:
     """
-    Đăng bài lên WordPress.
-
-    Args:
-        title:            Tiêu đề bài viết.
-        html_content:     Nội dung HTML (có thể chứa [IMAGE_PLACEHOLDER_N]).
-        uploaded_images:  Kết quả từ image_uploader.upload_images().
-        site_config:      {"url": str, "client_key": str, "client_secret": str}
-        status:           "draft" hoặc "publish".
-        category_ids:     Danh sách ID category WordPress (tùy chọn).
-
-    Returns:
-        {"post_id": int, "post_url": str, "edit_url": str, "status": str}
+    Đăng bài viết thông thường (Blog Post) lên WordPress qua REST API (/wp-json/wp/v2/posts).
+    Cần WordPress Application Password (WP_USER + WP_APP_PASSWORD).
     """
-    # Thay IMAGE_PLACEHOLDER bằng HTML <figure> thực tế
     final_html = _replace_placeholders(html_content, uploaded_images)
 
     base_url = site_config["url"].rstrip("/")
@@ -64,15 +123,13 @@ def publish_post(
         "status":  status,
     }
 
-    # Gắn category nếu có
     if category_ids:
         payload["categories"] = category_ids
 
-    # Gắn featured image là ảnh đầu tiên
     if uploaded_images:
         payload["featured_media"] = uploaded_images[0]["id"]
 
-    logger.info(f"Đang đăng bài lên {base_url} (status={status})...")
+    logger.info(f"Đang đăng bài blog lên {base_url} (status={status})...")
 
     try:
         response = requests.post(
@@ -101,6 +158,7 @@ def publish_post(
         "post_url": post_url,
         "edit_url": edit_url,
         "status":   status,
+        "type": "post",
     }
 
 

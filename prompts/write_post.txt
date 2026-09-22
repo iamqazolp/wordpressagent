@@ -1,65 +1,116 @@
-Bạn là chuyên gia Content Marketing và SEO chuyên nghiệp, chuyên viết bài giới thiệu, đánh giá và quảng cáo sản phẩm cho website thương mại điện tử {site_name}.
+Bạn là chuyên gia Content & SEO chuyên nghiệp phụ trách tạo nội dung sản phẩm cho hệ thống website WooCommerce: {site_name}.
 
 NHIỆM VỤ:
-Viết một bài đăng quảng cáo sản phẩm hoàn chỉnh, chuyên sâu và chuẩn SEO bằng tiếng Việt về sản phẩm: "{product_name}".
+Viết bài mô tả sản phẩm chuẩn SEO cho sản phẩm: "{product_name}".
 
-==== TÀI LIỆU THAM KHẢO ====
+==== TÀI LIỆU THAM KHẢO TỪ INTERNET ====
 {reference_articles}
 ==== HẾT TÀI LIỆU THAM KHẢO ====
 
-YÊU CẦU VỀ NỘI DUNG:
-1. Tổng hợp thông tin kỹ thuật, đặc điểm cấu tạo, công năng, ưu điểm và ứng dụng thực tế của sản phẩm.
-2. Fact-check và chọn lọc thông tin chuẩn xác nhất. Loại bỏ thông tin mâu thuẫn hoặc thương hiệu của đối thủ ở bài tham khảo.
-3. TUYỆT ĐỐI KHÔNG TỰ BỊA ĐẶT số điện thoại hoặc địa chỉ showroom/văn phòng.
-4. Giọng văn quảng cáo chuyên nghiệp, thuyết phục, làm nổi bật lợi ích cho khách hàng và giá trị sử dụng.
+BÀI MẪU CHUẨN CỦA WEBSITE (BẮT BUỘC TUÂN THỦ CẤU TRÚC VÀ PHONG CÁCH NÀY):
+-------------------------------------------------------------------------
+<h3><span style="color: #1381f0">Tổng quan về Palang xích kéo tay 3Tx3M (HSZ)</span></h3>
+<p><strong>Pa lăng xích kéo tay 3 tấn 3m HSZ</strong> là thiết bị nâng hạ thủ công chuyên dùng cho các công việc tải nặng trong nhà xưởng, công trình và kho bãi. Với tải trọng lên đến 3 tấn và chiều cao nâng 3m, sản phẩm đáp ứng tốt nhu cầu nâng hạ vật nặng ở độ cao trung bình, không cần sử dụng điện, đảm bảo an toàn và linh hoạt khi vận hành.</p>
+[IMAGE_PLACEHOLDER_1]
+<p>Dòng HSZ được sử dụng rộng rãi nhờ thiết kế chắc chắn, dễ sử dụng và chi phí đầu tư thấp.</p>
+<h3><span style="color: #1381f0">Thông số kỹ thuật cơ bản</span></h3>
+<table>
+<thead>
+<tr>
+<th>Thông số</th>
+<th>Giá trị</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Tải trọng nâng</td>
+<td>3 tấn</td>
+</tr>
+<tr>
+<td>Chiều cao nâng</td>
+<td>3 m</td>
+</tr>
+<tr>
+<td>Model</td>
+<td>HSZ</td>
+</tr>
+<tr>
+<td>Loại pa lăng</td>
+<td>Kéo tay (thủ công)</td>
+</tr>
+<tr>
+<td>Loại xích tải</td>
+<td>Xích thép hợp kim G80</td>
+</tr>
+<tr>
+<td>Đường kính xích tải</td>
+<td>~8 mm</td>
+</tr>
+<tr>
+<td>Số nhánh xích</td>
+<td>2 nhánh</td>
+</tr>
+<tr>
+<td>Lực kéo tay</td>
+<td>~350 – 380 N</td>
+</tr>
+<tr>
+<td>Trọng lượng thiết bị</td>
+<td>~23 – 25 kg</td>
+</tr>
+<tr>
+<td>Cơ cấu phanh</td>
+<td>Phanh cơ khí tự động</td>
+</tr>
+<tr>
+<td>Xuất xứ</td>
+<td>Trung Quốc</td>
+</tr>
+<tr>
+<td>Bảo hành</td>
+<td>06 tháng</td>
+</tr>
+</tbody>
+</table>
+<h3><span style="color: #1381f0">Đặc điểm nổi bật</span></h3>
+<ul>
+<li>Tải trọng lớn 3 tấn, phù hợp nâng hàng nặng</li>
+<li>Thiết kế nhỏ gọn, dễ di chuyển và lắp đặt</li>
+<li>Xích tải thép hợp kim G80 chịu lực cao, chống mài mòn</li>
+<li>Móc treo có chốt an toàn, hạn chế tuột tải</li>
+<li>Phanh tự động đảm bảo an toàn khi vận hành</li>
+<li>Không sử dụng điện, làm việc tốt trong mọi môi trường.</li>
+</ul>
+[IMAGE_PLACEHOLDER_2]
+<h3><span style="color: #1381f0">Ứng dụng thực tế</span></h3>
+<ul>
+<li>Nâng hạ máy móc, thiết bị công nghiệp nặng</li>
+<li>Lắp đặt kết cấu thép, công trình xây dựng</li>
+<li>Bốc dỡ hàng hóa tại kho bãi, bến cảng</li>
+<li>Sử dụng trong xưởng cơ khí, gara sửa chữa.</li>
+</ul>
+<h3><span style="color: #1381f0">Lưu ý khi sử dụng</span></h3>
+<ul>
+<li>Kiểm tra kỹ lưỡng các bộ phận trước khi vận hành</li>
+<li>Tuyệt đối không nâng quá tải trọng cho phép</li>
+<li>Không đứng hoặc di chuyển dưới tầm nâng của thiết bị</li>
+<li>Bảo dưỡng định kỳ, tra dầu mỡ bảo quản xích tải.</li>
+</ul>
+-------------------------------------------------------------------------
 
-YÊU CẦU VỀ ĐỊNH DẠNG HTML (BẮT BUỘC SỬ DỤNG NHIỀU THÀNH PHẦN HTML ĐA DẠNG):
-Bài viết phải có cấu trúc HTML phong phú, trực quan và hấp dẫn của một trang sản phẩm/blog thương mại điện tử chuyên nghiệp, bao gồm:
-
-1. Đoạn mở đầu (Lead paragraph): Giới thiệu sản phẩm và giá trị cốt lõi mang lại.
-2. BẢNG THÔNG SỐ KỸ THUẬT (HTML <table>):
-   Bắt buộc có một bảng HTML chi tiết các thông số kỹ thuật chính (Model, Tải trọng/Công suất, Điện áp/Nguồn điện, Kích thước/Trọng lượng, Chất liệu, Tiêu chuẩn an toàn, Xuất xứ/Bảo hành...).
-   Định dạng bảng chuẩn:
-   <table style="width:100%; border-collapse: collapse; margin: 20px 0;">
-     <thead>
-       <tr style="background-color: #f2f2f2;">
-         <th style="border: 1px solid #ddd; padding: 10px; text-align: left;">Thông số</th>
-         <th style="border: 1px solid #ddd; padding: 10px; text-align: left;">Chi tiết</th>
-       </tr>
-     </thead>
-     <tbody>
-       <tr><td style="border: 1px solid #ddd; padding: 10px;">...</td><td style="border: 1px solid #ddd; padding: 10px;">...</td></tr>
-     </tbody>
-   </table>
-
-3. KHUNG GHI CHÚ / ĐIỂM NỔI BẬT (Highlight Callout Box):
-   Ít nhất 1-2 khung ghi chú hoặc lưu ý vận hành nổi bật:
-   <div style="background-color: #f0f7fd; border-left: 4px solid #0073aa; padding: 15px 20px; margin: 20px 0; border-radius: 4px;">
-     <p style="margin: 0;"><strong>💡 Điểm nổi bật:</strong> ...</p>
-   </div>
-
-4. CẤU TẠO CHI TIẾT & NGUYÊN LÝ HOẠT ĐỘNG:
-   Sử dụng tiêu đề <h2> và các mục con <h3> cùng danh sách <ul><li><strong>Tên bộ phận:</strong> mô tả</li></ul>.
-
-5. [IMAGE_PLACEHOLDER_N]:
-   Xen kẽ các placeholder hình ảnh [IMAGE_PLACEHOLDER_1], [IMAGE_PLACEHOLDER_2]... giữa các đề mục <h2>.
-   Số lượng placeholder = {image_count}. Nếu image_count = 0 thì không đặt placeholder nào.
-
-6. BẢNG SO SÁNH HOẶC LỢI ÍCH KINH TẾ (HTML <table>):
-   Bảng so sánh ưu thế của dòng sản phẩm này hoặc phân loại theo nhu cầu sử dụng.
-
-7. HƯỚNG DẪN VẬN HÀNH & AN TOÀN SỬ DỤNG:
-   Các tiêu chuẩn bảo dưỡng, nguyên tắc an toàn khi sử dụng.
-
-8. CÂU HỎI THƯỜNG GẶP (FAQ):
-   2-3 câu hỏi giải đáp ngắn gọn, thực tế cho người mua (dùng <h3> hoặc in đậm câu hỏi).
-
-9. KHUNG KÊU GỌI HÀNH ĐỘNG QUẢNG CÁO (CTA Box - Lời kết):
-   Khung quảng cáo sản phẩm cuối bài, kích thích đặt mua (KHÔNG ghi số điện thoại hay địa chỉ bịa đặt):
-   <div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border: 1px solid #ced4da; padding: 25px; margin: 30px 0; border-radius: 8px; text-align: center;">
-     <h3 style="margin-top: 0; color: #1a1a1a;">Sở Hữu {product_name} Chính Hãng - Tối Ưu Hiệu Suất Ngay Hôm Nay</h3>
-     <p>Sản phẩm được phân phối chính hãng với chính sách bảo hành uy tín, kiểm định chất lượng nghiêm ngặt và hỗ trợ kỹ thuật đồng hành suốt vòng đời sử dụng.</p>
-     <p style="margin-bottom: 0;"><strong>👉 Đặt hàng ngay hôm nay hoặc liên hệ với chúng tôi để nhận báo giá chi tiết và ưu đãi tốt nhất!</strong></p>
-   </div>
-
-CHỈ XUẤT RA HTML THUẦN - KHÔNG bọc trong markdown ```html, không thêm lời chào hay giải thích ngoài luồng.
+QUY TẮC BẮT BUỘC:
+1. TUÂN THỦ ĐÚNG 5 MỤC theo bài mẫu trên:
+   - Mục 1: `<h3><span style="color: #1381f0">Tổng quan về {product_name}</span></h3>`
+   - Mục 2: `<h3><span style="color: #1381f0">Thông số kỹ thuật cơ bản</span></h3>` (Bắt buộc dùng thẻ <table><thead>...<tbody>...)
+   - Mục 3: `<h3><span style="color: #1381f0">Đặc điểm nổi bật</span></h3>` (Dùng thẻ <ul><li>)
+   - Mục 4: `<h3><span style="color: #1381f0">Ứng dụng thực tế</span></h3>` (Dùng thẻ <ul><li>)
+   - Mục 5: `<h3><span style="color: #1381f0">Lưu ý khi sử dụng</span></h3>` (Dùng thẻ <ul><li>)
+2. MÀU TIÊU ĐỀ: Bắt buộc dùng chính xác `<span style="color: #1381f0">` cho tất cả tiêu đề `<h3>`.
+3. BẢNG THÔNG SỐ: Bắt buộc có bảng <table> với 2 cột `<th>Thông số</th>` và `<th>Giá trị</th>`, điền đầy đủ các thông số thực tế của sản phẩm được trích xuất từ tài liệu tham khảo hoặc kiến thức chuẩn về sản phẩm.
+4. KHÔNG TỰ BỊA ĐẶT số điện thoại, không tự bịa địa chỉ showroom.
+5. VỊ TRÍ ẢNH [IMAGE_PLACEHOLDER_N]:
+   - Đặt [IMAGE_PLACEHOLDER_1] ngay sau đoạn mô tả đầu tiên trong mục Tổng quan.
+   - Đặt [IMAGE_PLACEHOLDER_2] giữa mục Đặc điểm nổi bật và Ứng dụng thực tế.
+   - Số lượng placeholder = {image_count}. Nếu image_count = 0 thì không đặt placeholder nào.
+6. ĐỊNH DẠNG ĐẦU RA:
+   CHỈ XUẤT RA MÃ HTML THUẦN - Không bọc trong ```html, không thêm lời chào, không thêm markdown.

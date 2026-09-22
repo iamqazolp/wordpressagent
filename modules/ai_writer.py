@@ -106,31 +106,21 @@ def write_post(
 
 
 def _generate_title(product_name: str, html_content: str) -> str:
-    """Lấy tiêu đề từ H1 đầu tiên trong HTML nếu có, fallback về tiêu đề chuẩn."""
-    h1_match = re.search(r"<h1[^>]*>(.*?)</h1>", html_content, re.IGNORECASE | re.DOTALL)
-    if h1_match:
-        title = re.sub(r"<[^>]+>", "", h1_match.group(1)).strip()
-        if title:
-            return title
-    return f"{product_name.capitalize()} – Thông Số Kỹ Thuật, Đặc Điểm & Báo Giá Mới Nhất"
+    """Tạo tên sản phẩm chuẩn phong cách WooCommerce như web mẫu."""
+    # Thử lấy từ 'Tổng quan về ...' trong H3
+    h3_match = re.search(
+        r"<h3>(?:<span[^>]*>)?\s*Tổng quan về\s*(.*?)(?:</span>)?\s*</h3>",
+        html_content,
+        re.IGNORECASE,
+    )
+    if h3_match:
+        extracted = re.sub(r"<[^>]+>", "", h3_match.group(1)).strip()
+        if extracted and len(extracted) < 80:
+            return extracted
+    # Fallback: Chuẩn hóa chữ hoa đầu từ cho product_name
+    return " ".join(w.capitalize() for w in product_name.strip().split())
 
 
 def suggest_title(product_name: str) -> str:
-    """Đề xuất 1 tiêu đề SEO cho bài viết sản phẩm."""
-    if not settings.GEMINI_API_KEY:
-        return f"{product_name} – Thông Số Kỹ Thuật & Đánh Giá Chi Tiết"
-    try:
-        client = _get_client()
-        prompt = (
-            f"Hãy viết 1 tiêu đề bài viết giới thiệu/quảng cáo SEO bằng tiếng Việt về sản phẩm '{product_name}'. "
-            "Tiêu đề chuyên nghiệp, hấp dẫn, dưới 70 ký tự. "
-            "Chỉ trả lời duy nhất tiêu đề, không giải thích thêm."
-        )
-        response = client.models.generate_content(
-            model=settings.GEMINI_MODEL,
-            contents=prompt,
-        )
-        return response.text.strip().strip('"').strip("'")
-    except Exception as e:
-        logger.warning(f"Không tạo được tiêu đề gợi ý: {e}")
-        return f"{product_name} – Thông Số Kỹ Thuật & Đánh Giá Chi Tiết"
+    """Đề xuất tên sản phẩm chuẩn SEO."""
+    return " ".join(w.capitalize() for w in product_name.strip().split())

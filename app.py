@@ -82,8 +82,8 @@ def run_pipeline(product_name, image_files, extra_urls_text, site_name, progress
         return "", "", "", f"❌ Lỗi: {str(e)}"
 
 
-def publish_to_wordpress(title, raw_html, image_files, site_name, post_status):
-    """Upload ảnh và đăng bài lên WordPress."""
+def publish_to_wordpress(title, raw_html, image_files, site_name, post_status, post_type="Sản phẩm WooCommerce"):
+    """Upload ảnh và đăng sản phẩm hoặc bài viết lên website."""
     if not title or not raw_html:
         return "❌ Chưa có bài viết. Vui lòng tạo bài trước!"
 
@@ -91,47 +91,50 @@ def publish_to_wordpress(title, raw_html, image_files, site_name, post_status):
     if not site_config:
         return f"❌ Không tìm thấy cấu hình cho website: {site_name}"
 
-    if not site_config.get("wp_user"):
-        return (
-            "❌ Chưa cấu hình WP_USER và WP_APP_PASSWORD trong .env\n\n"
-            "**Cách tạo Application Password:**\n"
-            "1. Vào khodentrangtri.com/wp-admin\n"
-            "2. Users → Profile → Application Passwords\n"
-            "3. Đặt tên 'WordPress Agent' → Add New\n"
-            "4. Copy mật khẩu → thêm vào .env:\n"
-            "   WP_USER=admin\n"
-            "   WP_APP_PASSWORD=xxxx xxxx xxxx xxxx"
-        )
-
-    # Upload ảnh
     image_paths = []
     if image_files:
         image_paths = image_files if isinstance(image_files[0], str) else [f.name for f in image_files]
 
     uploaded = []
-    if image_paths:
+    if image_paths and site_config.get("wp_user"):
         uploaded = image_uploader.upload_images(image_paths, site_config)
-        if not uploaded:
-            return "❌ Upload ảnh thất bại. Kiểm tra kết nối và API key."
 
     try:
-        result = wp_publisher.publish_post(
-            title=title,
-            html_content=raw_html,
-            uploaded_images=uploaded,
-            site_config=site_config,
-            status=post_status,
-        )
-        status_label = "📝 Nháp" if result["status"] == "draft" else "🟢 Đã đăng công khai"
+        if "Sản phẩm" in post_type:
+            result = wp_publisher.publish_product(
+                title=title,
+                html_content=raw_html,
+                uploaded_images=uploaded,
+                site_config=site_config,
+                status=post_status,
+            )
+            type_label = "Sản phẩm WooCommerce"
+        else:
+            if not site_config.get("wp_user"):
+                return (
+                    "❌ Để đăng bài viết (Blog Post), bạn cần cấu hình WP_USER và WP_APP_PASSWORD trong .env.\n\n"
+                    "💡 **Gợi ý:** Chọn mục **'Sản phẩm WooCommerce'** để đăng ngay bằng API key sẵn có."
+                )
+            result = wp_publisher.publish_post(
+                title=title,
+                html_content=raw_html,
+                uploaded_images=uploaded,
+                site_config=site_config,
+                status=post_status,
+            )
+            type_label = "Bài viết Blog"
+
+        status_label = "📝 Nháp (Draft)" if result["status"] == "draft" else "🟢 Đã xuất bản"
         return (
-            f"✅ **Đăng bài thành công!**\n\n"
+            f"✅ **Đăng {type_label} thành công!**\n\n"
             f"- **Trạng thái:** {status_label}\n"
-            f"- **ID bài viết:** {result['post_id']}\n"
-            f"- **Xem bài:** {result['post_url']}\n"
-            f"- **Chỉnh sửa:** {result['edit_url']}"
+            f"- **ID:** {result['post_id']}\n"
+            f"- **Xem trên web:** [{result['post_url']}]({result['post_url']})\n"
+            f"- **Chỉnh sửa trong Admin:** [{result['edit_url']}]({result['edit_url']})"
         )
     except Exception as e:
-        return f"❌ Lỗi khi đăng bài: {str(e)}"
+        logger.exception("Lỗi khi đăng bài")
+        return f"❌ Lỗi khi đăng: {str(e)}"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -235,13 +238,19 @@ with gr.Blocks(
             preview_output = gr.HTML(label="👁️ Preview bài viết")
 
             with gr.Row():
+                post_type_selector = gr.Radio(
+                    label="Loại nội dung đăng",
+                    choices=["Sản phẩm WooCommerce", "Bài viết Blog"],
+                    value="Sản phẩm WooCommerce",
+                    info="Sản phẩm dùng API Key có sẵn trong .env (không cần Application Password)",
+                )
                 post_status_selector = gr.Radio(
                     label="Trạng thái khi đăng",
                     choices=["draft", "publish"],
                     value="draft",
-                    info="'draft' = nháp (khuyến nghị), 'publish' = đăng ngay",
+                    info="'draft' = nháp (khuyến nghị), 'publish' = công khai ngay",
                 )
-                publish_btn = gr.Button("📤 Đăng bài lên WordPress", variant="secondary", size="lg")
+                publish_btn = gr.Button("📤 Đăng lên Website", variant="secondary", size="lg")
 
             publish_result = gr.Markdown()
 
@@ -293,7 +302,7 @@ Sau đó khởi động lại app.
 
     publish_btn.click(
         fn=publish_to_wordpress,
-        inputs=[title_output, raw_html_state, image_input, site_selector, post_status_selector],
+        inputs=[title_output, raw_html_state, image_input, site_selector, post_status_selector, post_type_selector],
         outputs=[publish_result],
     )
 

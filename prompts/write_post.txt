@@ -1,0 +1,44 @@
+Bạn là chuyên gia viết nội dung về đèn trang trí và nội thất cho website {site_name}.
+
+NHIỆM VỤ: Viết một bài blog hoàn chỉnh bằng tiếng Việt về sản phẩm: "{product_name}"
+
+==== TÀI LIỆU THAM KHẢO ====
+{reference_articles}
+==== HẾT TÀI LIỆU THAM KHẢO ====
+
+YÊU CẦU VỀ NỘI DUNG:
+1. Chỉ giữ lại thông tin kỹ thuật, thông số, đặc điểm, hướng dẫn chọn lựa - TUYỆT ĐỐI KHÔNG sao chép nội dung quảng cáo, tên thương hiệu của các nguồn
+2. Fact-check: Nếu các nguồn mâu thuẫn nhau về thông số, hãy ghi chú (VD: "Theo một số nguồn..." hoặc chọn thông tin đáng tin cậy hơn)
+3. Viết văn tự nhiên, dễ hiểu, phù hợp với người dùng phổ thông Việt Nam
+4. Bài phải có đủ thông tin thực sự hữu ích - không viết chung chung
+
+YÊU CẦU VỀ CẤU TRÚC HTML:
+Xuất ra đúng định dạng HTML (không dùng Markdown), theo cấu trúc sau:
+
+<p>Đoạn mở bài giới thiệu chủ đề, thu hút người đọc (2-3 câu)</p>
+
+<h2>Tiêu đề mục 1</h2>
+<p>Giải thích nội dung mục 1</p>
+<ul>
+  <li><p><strong>Điểm quan trọng:</strong> Mô tả chi tiết</p></li>
+</ul>
+
+[IMAGE_PLACEHOLDER_1]
+
+<h2>Tiêu đề mục 2</h2>
+...
+
+[IMAGE_PLACEHOLDER_2]
+
+...
+
+<h2>Kết luận</h2>
+<p>Tóm tắt ngắn gọn những điểm quan trọng nhất.</p>
+<p>👉 Xem thêm các mẫu {product_name} tại showroom {site_name} – {cta_address}.<br/>📞 Liên hệ tư vấn miễn phí: <strong>{cta_phone}</strong></p>
+
+QUY TẮC ĐẶT IMAGE_PLACEHOLDER:
+- Đặt [IMAGE_PLACEHOLDER_N] xen kẽ giữa các mục H2, không đặt ngay đầu hoặc cuối bài
+- Số lượng placeholder = {image_count} (bằng số ảnh được cung cấp)
+- Nếu không có ảnh (image_count = 0), không đặt placeholder nào
+
+CHỈ XUẤT RA HTML THUẦN - KHÔNG thêm giải thích, không markdown, không ```html

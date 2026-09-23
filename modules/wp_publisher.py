@@ -69,7 +69,14 @@ def publish_product(
         payload["categories"] = [{"id": cid} for cid in category_ids]
 
     if uploaded_images:
-        payload["images"] = [{"src": img["url"]} for img in uploaded_images if "url" in img]
+        images_payload = []
+        for img in uploaded_images:
+            if "id" in img and img["id"]:
+                images_payload.append({"id": img["id"]})
+            elif "url" in img and img["url"]:
+                images_payload.append({"src": img["url"]})
+        if images_payload:
+            payload["images"] = images_payload
 
     logger.info(f"Đang tạo sản phẩm WooCommerce tại {base_url} (status={status})...")
 

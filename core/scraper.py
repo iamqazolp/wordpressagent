@@ -13,8 +13,10 @@ from tenacity import retry, stop_after_attempt, wait_fixed
 
 logger = logging.getLogger(__name__)
 
-# Timeout tối đa khi tải trang (giây)
-REQUEST_TIMEOUT = 15
+from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception
+
+# Timeout tối đa khi tải trang (giây) - giảm xuống để không làm đơ pipeline
+REQUEST_TIMEOUT = 7
 
 # User-Agent giả browser để tránh bị chặn
 HEADERS = {
@@ -39,7 +41,20 @@ TAGS_TO_REMOVE = [
 _scrape_cache: dict[str, str] = {}
 
 
-@retry(stop=stop_after_attempt(2), wait=wait_fixed(2), reraise=True)
+def _is_retryable_error(exc: BaseException) -> bool:
+    """Không thử lại nếu gặp mã lỗi 4xx của client (400, 403, 404...)."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        if 400 <= exc.response.status_code < 500:
+            return False
+    return True
+
+
+@retry(
+    stop=stop_after_attempt(2),
+    wait=wait_fixed(1),
+    retry=retry_if_exception(_is_retryable_error),
+    reraise=True,
+)
 def _fetch_html(url: str) -> str:
     """Tải HTML từ URL với cơ chế tự động thử lại (retry)."""
     response = httpx.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT, follow_redirects=True)

@@ -115,13 +115,20 @@ def publish_articles(
         
         # Upload images if possible
         uploaded = []
+        image_warning = None
         image_paths = image_files or []
-        if image_paths and site_config.get('wp_user'):
-            try:
-                uploaded = wp_client.upload_images(image_paths, site_config)
-            except Exception as e:
-                logger.warning(f'Upload ảnh thất bại tại {site_name}: {e}')
-        
+        if image_paths:
+            if site_config.get('wp_user') and site_config.get('wp_app_password'):
+                try:
+                    uploaded = wp_client.upload_images(image_paths, site_config)
+                    if not uploaded:
+                        image_warning = "Tải ảnh thất bại (vui lòng kiểm tra lại quyền WordPress Application Password)."
+                except Exception as e:
+                    logger.warning(f'Upload ảnh thất bại tại {site_name}: {e}')
+                    image_warning = f"Lỗi upload ảnh: {e}"
+            else:
+                image_warning = "Chưa cấu hình WordPress Username & Application Password ở tab Quản Lý Website nên chưa tải được ảnh lên WordPress."
+
         title = article_data.get('title', '')
         raw_html = article_data.get('raw_html', '')
         
@@ -145,6 +152,7 @@ def publish_articles(
                 'site_name': site_name, 'success': True,
                 'post_id': res.get('post_id'), 'post_url': res.get('post_url'),
                 'edit_url': res.get('edit_url'), 'status': res.get('status'),
+                'image_warning': image_warning,
                 'error': None,
             })
         except Exception as e:

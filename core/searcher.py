@@ -5,9 +5,23 @@ Hỗ trợ cả tìm tự động và nhập URL tay.
 """
 from __future__ import annotations
 import logging
+import unicodedata
 from config import settings
 
 logger = logging.getLogger(__name__)
+
+# Các domain mạng xã hội hoặc không chứa thông số kỹ thuật sản phẩm
+BLOCKED_DOMAINS = [
+    "facebook.com",
+    "instagram.com",
+    "tiktok.com",
+    "youtube.com",
+    "twitter.com",
+    "x.com",
+    "pinterest.com",
+    "threads.net",
+    "wikipedia.org",
+]
 
 
 def search_articles(product_name: str, extra_urls: list[str] | None = None) -> list[dict]:
@@ -21,15 +35,11 @@ def search_articles(product_name: str, extra_urls: list[str] | None = None) -> l
     Returns:
         List[{"url": str, "title": str, "source": "google"|"manual"}]
     """
+    # Chuẩn hoá Unicode NFC để sửa lỗi gõ tiếng Việt trên macOS/Windows
+    product_name = unicodedata.normalize("NFC", product_name).strip()
     results: list[dict] = []
 
-    # 1. Tìm tự động qua SerpAPI
-    if settings.SERP_API_KEY:
-        results.extend(_search_via_serpapi(product_name))
-    else:
-        logger.warning("Chưa cấu hình SERP_API_KEY → bỏ qua tìm kiếm tự động")
-
-    # 2. Thêm URL người dùng nhập tay
+    # 1. Thêm URL người dùng nhập tay trước (ưu tiên cao nhất)
     if extra_urls:
         for url in extra_urls:
             url = url.strip()
@@ -40,6 +50,12 @@ def search_articles(product_name: str, extra_urls: list[str] | None = None) -> l
                     "source": "manual",
                 })
                 logger.info(f"Thêm URL thủ công: {url}")
+
+    # 2. Tìm tự động qua SerpAPI
+    if settings.SERP_API_KEY:
+        results.extend(_search_via_serpapi(product_name))
+    else:
+        logger.warning("Chưa cấu hình SERP_API_KEY → bỏ qua tìm kiếm tự động")
 
     logger.info(f"Tổng cộng {len(results)} nguồn tham khảo")
     return results
@@ -53,15 +69,17 @@ def _search_via_serpapi(product_name: str) -> list[dict]:
         logger.error("Chưa cài thư viện serpapi. Chạy: pip install google-search-results")
         return []
 
-    query = f"{product_name} là gì thông số kỹ thuật đánh giá"
+    # Truy vấn tập trung vào thông số kỹ thuật thực tế thay vì từ hỏi "là gì"
+    query = f"{product_name} thông số kỹ thuật"
+    logger.info(f"🔍 Tìm kiếm Google: {query}")
 
     params = {
-        "engine": "google",
-        "q": query,
-        "hl": "vi",                          # Kết quả tiếng Việt
-        "gl": "vn",                          # Khu vực Việt Nam
-        "num": settings.SEARCH_RESULT_COUNT,
-        "api_key": settings.SERP_API_KEY,
+        'engine': 'google',
+        'q': query,
+        'hl': 'vi',
+        'gl': 'vn',
+        'num': 8,
+        'api_key': settings.SERP_API_KEY,
     }
 
     try:
@@ -72,11 +90,20 @@ def _search_via_serpapi(product_name: str) -> list[dict]:
         return []
 
     results = []
-    for item in data.get("organic_results", []):
-        url   = item.get("link", "")
-        title = item.get("title", url)
-        if url:
-            results.append({"url": url, "title": title, "source": "google"})
-            logger.info(f"Tìm thấy: {title[:60]}...")
+    for item in data.get('organic_results', []):
+        url = item.get('link', '')
+        title = item.get('title', url)
+        if not url:
+            continue
+
+        url_lower = url.lower()
+        if any(bad in url_lower for bad in BLOCKED_DOMAINS):
+            logger.info(f"Bỏ qua trang không phù hợp: {url}")
+            continue
+
+        results.append({'url': url, 'title': title, 'source': 'google'})
+        logger.info(f"Tìm thấy: {title[:60]}... ({url})")
+        if len(results) >= 4:
+            break
 
     return results

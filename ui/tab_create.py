@@ -153,7 +153,10 @@ def publish_to_sites_ui(articles_state, image_files, post_status, post_type, pro
         for r in results:
             if r['success']:
                 status_lbl = '📝 Nháp' if r['status'] == 'draft' else '🟢 Công khai'
-                report.append(f"- **{r['site_name']}**: ✅ Thành công ({status_lbl}) | [Xem]({r['post_url']}) | [Sửa]({r['edit_url']})")
+                line = f"- **{r['site_name']}**: ✅ Thành công ({status_lbl}) | [Xem]({r['post_url']}) | [Sửa]({r['edit_url']})"
+                if r.get('image_warning'):
+                    line += f"\n  - ⚠️ *Lưu ý về hình ảnh:* {r['image_warning']}"
+                report.append(line)
             else:
                 report.append(f"- **{r['site_name']}**: ❌ {r['error']}")
         return '\n\n'.join(report)
@@ -307,7 +310,7 @@ def build_tab_create(db_session=None) -> dict:
             label="Loại nội dung đăng",
             choices=["Sản phẩm WooCommerce", "Bài viết Blog"],
             value="Sản phẩm WooCommerce",
-            info="Sản phẩm WooCommerce dùng trực tiếp API Key sẵn có mà không cần Application Password",
+            info="Đăng bài hoặc sản phẩm (lưu ý: để tải ảnh lên website, cần có Application Password ở tab Quản Lý Website)",
         )
         post_status_selector = gr.Radio(
             label="Trạng thái khi đăng",

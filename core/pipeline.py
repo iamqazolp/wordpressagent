@@ -90,11 +90,13 @@ def generate_articles(
 
 
 def publish_articles(
-    articles: dict[str, dict],       # {site_name: {'title': str, 'raw_html': str}}
+    articles: dict[str, dict],       # {site_name: {'title': str, 'raw_html': str, 'short_description'?: str}}
     image_files: list[str] | None,
     site_configs: dict[str, dict],   # {site_name: decrypted site_config}
     post_type: str,                  # 'product' or 'post'
     post_status: str,                # 'draft' or 'publish'
+    regular_price: str = "",
+    sale_price: str = "",
     progress_callback: Callable[[float, str], None] | None = None,
 ) -> list[dict]:
     """
@@ -131,13 +133,19 @@ def publish_articles(
 
         title = article_data.get('title', '')
         raw_html = article_data.get('raw_html', '')
+        short_desc = article_data.get('short_description', '')
         
         try:
             if 'product' in post_type.lower() or 'sản phẩm' in post_type.lower():
                 res = wp_client.publish_product(
-                    title=title, html_content=raw_html,
-                    uploaded_images=uploaded, site_config=site_config,
+                    title=title,
+                    html_content=raw_html,
+                    uploaded_images=uploaded,
+                    site_config=site_config,
                     status=post_status,
+                    regular_price=regular_price,
+                    sale_price=sale_price,
+                    short_description=short_desc,
                 )
             else:
                 if not site_config.get('wp_user'):

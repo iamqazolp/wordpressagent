@@ -32,10 +32,10 @@ def run_pipeline_ui(product_name, image_files, extra_urls_text, user_notes_text,
     
     empty_dropdown = gr.Dropdown(choices=["(Chưa có bài viết)"], value="(Chưa có bài viết)")
     if not product_name.strip():
-        return empty_dropdown, "", "", {}, "", "❌ Vui lòng nhập tên sản phẩm!"
+        return empty_dropdown, "", "", "", {}, "", "❌ Vui lòng nhập tên sản phẩm!"
 
     if not selected_sites:
-        return empty_dropdown, "", "", {}, "", "❌ Vui lòng tích chọn ít nhất 1 website đăng bài!"
+        return empty_dropdown, "", "", "", {}, "", "❌ Vui lòng tích chọn ít nhất 1 website đăng bài!"
 
     db = SessionLocal()
     try:
@@ -68,12 +68,16 @@ def run_pipeline_ui(product_name, image_files, extra_urls_text, user_notes_text,
         )
         
         if not articles:
-            return empty_dropdown, "", "", {}, "", "❌ Không tạo được bài viết nào."
+            return empty_dropdown, "", "", "", {}, "", "❌ Không tạo được bài viết nào."
 
-        # Thêm preview_html và product_name cho mỗi bài viết
+        # Thêm preview_html, product_name và short_description cho mỗi bài viết
+        import re
         for site_name, art in articles.items():
             art['preview_html'] = make_preview_html(art['raw_html'], image_paths)
             art['product_name'] = product_name
+            # Tự động trích xuất bảng thông số kỹ thuật cho mô tả ngắn nếu có
+            table_match = re.search(r"(<table\b.*?>.*?</table>)", art['raw_html'], re.DOTALL | re.IGNORECASE)
+            art['short_description'] = table_match.group(1) if table_match else ""
             
         # Dữ liệu cho trang xem trước đầu tiên
         first_site = list(articles.keys())[0]
@@ -90,6 +94,7 @@ def run_pipeline_ui(product_name, image_files, extra_urls_text, user_notes_text,
         return (
             updated_dropdown,
             first_article.get("title", ""),
+            first_article.get("short_description", ""),
             first_article.get("preview_html", ""),
             articles,
             first_site,
@@ -97,12 +102,12 @@ def run_pipeline_ui(product_name, image_files, extra_urls_text, user_notes_text,
         )
     except Exception as e:
         logger.exception("Lỗi trong pipeline UI")
-        return empty_dropdown, "", "", {}, "", f"❌ Lỗi: {str(e)}"
+        return empty_dropdown, "", "", "", {}, "", f"❌ Lỗi: {str(e)}"
     finally:
         db.close()
 
 
-def publish_to_sites_ui(articles_state, image_files, post_status, post_type, progress=gr.Progress()):
+def publish_to_sites_ui(articles_state, image_files, post_status, post_type, regular_price="", sale_price="", progress=gr.Progress()):
     """
     Wrapper that calls core.pipeline.publish_articles().
     Also records PostHistory in DB for each result.
@@ -125,6 +130,8 @@ def publish_to_sites_ui(articles_state, image_files, post_status, post_type, pro
             site_configs=all_configs,
             post_type=post_type,
             post_status=post_status,
+            regular_price=regular_price,
+            sale_price=sale_price,
             progress_callback=lambda val, desc: progress(val, desc=desc),
         )
         
@@ -167,18 +174,26 @@ def publish_to_sites_ui(articles_state, image_files, post_status, post_type, pro
 def on_change_preview_site(selected_site, articles_state, edit_mode_active):
     """Khi đổi dropdown xem trước của site nào."""
     if not articles_state or selected_site not in articles_state:
-        return "", "", "", selected_site
+        return "", "", "", "", selected_site
     art = articles_state[selected_site]
+    short_desc = art.get("short_description", "")
     if edit_mode_active:
-        return art.get("title", ""), gr.update(visible=False), gr.update(visible=True, value=art.get("raw_html", "")), selected_site
+        return art.get("title", ""), short_desc, gr.update(visible=False), gr.update(visible=True, value=art.get("raw_html", "")), selected_site
     else:
-        return art.get("title", ""), gr.update(visible=True, value=art.get("preview_html", "")), gr.update(visible=False), selected_site
+        return art.get("title", ""), short_desc, gr.update(visible=True, value=art.get("preview_html", "")), gr.update(visible=False), selected_site
 
 
 def on_edit_title(new_title, current_site, articles_state):
     """Khi người dùng chỉnh sửa tiêu đề của website hiện tại."""
     if articles_state and current_site in articles_state:
         articles_state[current_site]["title"] = new_title
+    return articles_state
+
+
+def on_edit_short_desc(new_short_desc, current_site, articles_state):
+    """Khi người dùng chỉnh sửa mô tả ngắn của website hiện tại."""
+    if articles_state and current_site in articles_state:
+        articles_state[current_site]["short_description"] = new_short_desc
     return articles_state
 
 
@@ -295,6 +310,13 @@ def build_tab_create(db_session=None) -> dict:
                     interactive=True,
                 )
                 
+                short_desc_editor = gr.Code(
+                    label="📑 Mô tả ngắn sản phẩm (HTML - mặc định tự động lấy bảng thông số)",
+                    language="html",
+                    lines=4,
+                    interactive=True,
+                )
+
                 with gr.Row():
                     toggle_edit_btn = gr.Button("🔄 Chuyển đổi chế độ (Xem / Chỉnh sửa HTML)")
                 
@@ -304,6 +326,18 @@ def build_tab_create(db_session=None) -> dict:
                 
                 html_editor = gr.Code(label="Chỉnh sửa mã HTML", language="html", visible=False, interactive=True)
                 save_html_btn = gr.Button("💾 Lưu mã HTML đã sửa", visible=False)
+
+    with gr.Row():
+        regular_price_input = gr.Textbox(
+            label="💵 Giá gốc (Regular Price - VNĐ)",
+            placeholder="VD: 5500000 hoặc 5.500.000",
+            lines=1,
+        )
+        sale_price_input = gr.Textbox(
+            label="🏷️ Giá khuyến mại (Sale Price - VNĐ, tùy chọn)",
+            placeholder="VD: 4900000 hoặc 4.900.000 (để trống nếu không giảm)",
+            lines=1,
+        )
 
     with gr.Row():
         post_type_selector = gr.Radio(
@@ -334,6 +368,9 @@ def build_tab_create(db_session=None) -> dict:
         'status_box': status_box,
         'preview_site_selector': preview_site_selector,
         'title_output': title_output,
+        'short_desc_editor': short_desc_editor,
+        'regular_price_input': regular_price_input,
+        'sale_price_input': sale_price_input,
         'toggle_edit_btn': toggle_edit_btn,
         'edit_mode_state': edit_mode_state,
         'preview_output': preview_output,

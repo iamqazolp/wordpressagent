@@ -5,7 +5,7 @@ import gradio as gr
 
 from ui.tab_create import (
     build_tab_create, run_pipeline_ui, publish_to_sites_ui,
-    on_change_preview_site, on_edit_title, on_toggle_edit_mode, on_save_html_edit
+    on_change_preview_site, on_edit_title, on_edit_short_desc, on_toggle_edit_mode, on_save_html_edit
 )
 from ui.tab_sites import (
     build_tab_sites, handle_save_site, handle_delete_site, handle_test_connection_ui, on_select_site_for_edit
@@ -62,6 +62,7 @@ def create_app() -> gr.Blocks:
             outputs=[
                 create_comps['preview_site_selector'],
                 create_comps['title_output'],
+                create_comps['short_desc_editor'],
                 create_comps['preview_output'],
                 articles_state,
                 current_preview_site_state,
@@ -79,6 +80,7 @@ def create_app() -> gr.Blocks:
             ],
             outputs=[
                 create_comps['title_output'],
+                create_comps['short_desc_editor'],
                 create_comps['preview_output'],
                 create_comps['html_editor'],
                 current_preview_site_state,
@@ -88,6 +90,12 @@ def create_app() -> gr.Blocks:
         create_comps['title_output'].change(
             fn=on_edit_title,
             inputs=[create_comps['title_output'], current_preview_site_state, articles_state],
+            outputs=[articles_state],
+        )
+
+        create_comps['short_desc_editor'].change(
+            fn=on_edit_short_desc,
+            inputs=[create_comps['short_desc_editor'], current_preview_site_state, articles_state],
             outputs=[articles_state],
         )
 
@@ -120,6 +128,7 @@ def create_app() -> gr.Blocks:
             ],
             outputs=[
                 create_comps['title_output'],
+                create_comps['short_desc_editor'],
                 create_comps['preview_output'],
                 create_comps['html_editor'],
                 current_preview_site_state,
@@ -132,7 +141,9 @@ def create_app() -> gr.Blocks:
                 articles_state,
                 create_comps['image_input'],
                 create_comps['post_status_selector'],
-                create_comps['post_type_selector']
+                create_comps['post_type_selector'],
+                create_comps['regular_price_input'],
+                create_comps['sale_price_input'],
             ],
             outputs=[create_comps['publish_result']],
             show_progress=True,

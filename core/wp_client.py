@@ -132,6 +132,15 @@ def _get_wp_auth(site_config: dict) -> HTTPBasicAuth:
     return HTTPBasicAuth(site_config["client_key"], site_config["client_secret"])
 
 
+def _clean_price(price_str: str) -> str:
+    """Làm sạch định dạng giá tiền (loại bỏ dấu chấm, phẩy, chữ đ/VND) để chuẩn định dạng WooCommerce."""
+    if not price_str:
+        return ""
+    # Giữ lại chỉ các chữ số
+    cleaned = re.sub(r"[^\d]", "", str(price_str))
+    return cleaned.strip()
+
+
 @retry(stop=stop_after_attempt(2), wait=wait_fixed(3), reraise=True)
 def publish_product(
     title: str,
@@ -141,6 +150,8 @@ def publish_product(
     status: str = "draft",
     category_ids: list[int] | None = None,
     regular_price: str = "",
+    sale_price: str = "",
+    short_description: str = "",
 ) -> dict:
     """
     Đăng sản phẩm lên WooCommerce qua REST API (/wp-json/wc/v3/products).
@@ -148,11 +159,11 @@ def publish_product(
     """
     final_html = _replace_placeholders(html_content, uploaded_images)
 
-    # Tự động trích xuất bảng thông số kỹ thuật cho short_description
-    short_desc = ""
-    table_match = re.search(r"(<table>.*?</table>)", final_html, re.DOTALL | re.IGNORECASE)
-    if table_match:
-        short_desc = table_match.group(1)
+    # Tự động trích xuất bảng thông số kỹ thuật cho short_description nếu chưa truyền vào
+    if not short_description:
+        table_match = re.search(r"(<table\b.*?>.*?</table>)", final_html, re.DOTALL | re.IGNORECASE)
+        if table_match:
+            short_description = table_match.group(1)
 
     base_url = site_config["url"].rstrip("/")
     auth = HTTPBasicAuth(site_config["client_key"], site_config["client_secret"])
@@ -162,12 +173,17 @@ def publish_product(
         "name": title,
         "type": "simple",
         "description": final_html,
-        "short_description": short_desc,
+        "short_description": short_description,
         "status": status,
     }
 
-    if regular_price:
-        payload["regular_price"] = str(regular_price)
+    clean_reg = _clean_price(regular_price)
+    if clean_reg:
+        payload["regular_price"] = clean_reg
+
+    clean_sale = _clean_price(sale_price)
+    if clean_sale:
+        payload["sale_price"] = clean_sale
 
     if category_ids:
         payload["categories"] = [{"id": cid} for cid in category_ids]

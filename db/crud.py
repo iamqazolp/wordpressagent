@@ -11,6 +11,10 @@ from sqlalchemy import desc
 
 from db.models import Site, PostHistory, PromptTemplate
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 logger = logging.getLogger(__name__)
 
 _fernet = None
@@ -21,13 +25,25 @@ def _get_fernet() -> Fernet:
         return _fernet
     
     env_path = Path(__file__).parent.parent / '.env'
-    key = os.getenv('ENCRYPTION_KEY', '')
+    load_dotenv(env_path, override=False)
+    key = os.getenv('ENCRYPTION_KEY', '').strip()
     
     if not key:
-        # Generate new key and append to .env
+        # Check if key is already in .env file before appending
+        if env_path.exists():
+            with open(env_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    if line.strip().startswith('ENCRYPTION_KEY='):
+                        key = line.strip().split('=', 1)[1].strip()
+                        if key:
+                            os.environ['ENCRYPTION_KEY'] = key
+                            break
+
+    if not key:
+        # Generate new key only if completely absent
         key = Fernet.generate_key().decode()
         try:
-            with open(env_path, 'a') as f:
+            with open(env_path, 'a', encoding='utf-8') as f:
                 f.write(f'\nENCRYPTION_KEY={key}\n')
             os.environ['ENCRYPTION_KEY'] = key
             logger.info('Generated new ENCRYPTION_KEY and saved to .env')

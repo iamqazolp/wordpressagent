@@ -1,6 +1,9 @@
 # Bảo mật - không đưa lên Git
 .env
 config/sites.json
+config/sites.json.bak
+data/
+.gemini/
 
 # Python
 __pycache__/

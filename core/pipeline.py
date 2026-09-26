@@ -1,0 +1,173 @@
+"""
+core/pipeline.py
+Orchestrator for running the end-to-end flow.
+"""
+from __future__ import annotations
+import logging
+import re
+from typing import Callable
+
+from config import settings
+from core import scraper, searcher, ai_writer, wp_client
+
+logger = logging.getLogger(__name__)
+
+
+def generate_articles(
+    product_name: str,
+    image_files: list[str] | None,
+    extra_urls: list[str],
+    user_notes: str,
+    selected_sites: dict[str, dict],   # {site_name: site_config_dict}
+    randomize_enabled: bool,
+    template_content: str | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> dict[str, dict]:
+    """
+    Run full pipeline: search → scrape → AI write.
+    Returns {site_name: {'title': str, 'raw_html': str}}
+    """
+    # Validate inputs
+    if not product_name.strip():
+        raise ValueError('Vui lòng nhập tên sản phẩm!')
+    if not selected_sites:
+        raise ValueError('Vui lòng chọn ít nhất 1 website!')
+    if not settings.GEMINI_API_KEY:
+        raise ValueError('Chưa cấu hình GEMINI_API_KEY. Thêm vào file .env')
+    
+    def _progress(val, desc):
+        if progress_callback:
+            progress_callback(val, desc)
+    
+    articles = {}
+    
+    # Step 1: Search
+    _progress(0.1, '🔍 Đang tìm kiếm tài liệu tham khảo...')
+    search_results = searcher.search_articles(product_name, extra_urls)
+    
+    # Step 2: Scrape
+    _progress(0.25, '📄 Đang trích xuất nội dung kỹ thuật...')
+    urls_to_scrape = [a['url'] for a in search_results]
+    ref_contents = scraper.scrape_multiple(urls_to_scrape)
+    
+    image_count = len(image_files) if image_files else 0
+    total_sites = len(selected_sites)
+    
+    # Step 3: Generate for each site
+    if randomize_enabled and total_sites > 1:
+        for idx, (site_name, site_config) in enumerate(selected_sites.items(), 1):
+            p_val = 0.35 + (0.55 * (idx / total_sites))
+            _progress(p_val, f'🤖 AI đang viết bài riêng cho {site_name} ({idx}/{total_sites})...')
+            title, raw_html = ai_writer.write_post(
+                product_name=product_name,
+                reference_contents=ref_contents,
+                image_count=image_count,
+                site_name=site_name,
+                user_notes=user_notes,
+                variation_index=idx,
+                total_variations=total_sites,
+                template_content=template_content,
+            )
+            articles[site_name] = {'title': title, 'raw_html': raw_html}
+    else:
+        _progress(0.6, '🤖 AI đang viết bài...')
+        first_site_name = list(selected_sites.keys())[0]
+        title, raw_html = ai_writer.write_post(
+            product_name=product_name,
+            reference_contents=ref_contents,
+            image_count=image_count,
+            site_name=first_site_name,
+            user_notes=user_notes,
+            variation_index=0,
+            total_variations=1,
+            template_content=template_content,
+        )
+        for site_name in selected_sites:
+            articles[site_name] = {'title': title, 'raw_html': raw_html}
+    
+    _progress(1.0, '✅ Hoàn tất!')
+    return articles
+
+
+def publish_articles(
+    articles: dict[str, dict],       # {site_name: {'title': str, 'raw_html': str}}
+    image_files: list[str] | None,
+    site_configs: dict[str, dict],   # {site_name: decrypted site_config}
+    post_type: str,                  # 'product' or 'post'
+    post_status: str,                # 'draft' or 'publish'
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> list[dict]:
+    """
+    Publish articles to WordPress sites.
+    Returns list of result dicts.
+    """
+    results = []
+    total = len(articles)
+    
+    for i, (site_name, article_data) in enumerate(articles.items(), 1):
+        if progress_callback:
+            progress_callback(i / total, f'📤 Đang đăng lên {site_name} ({i}/{total})...')
+        
+        site_config = site_configs.get(site_name)
+        if not site_config:
+            results.append({'site_name': site_name, 'success': False, 'error': 'Không tìm thấy cấu hình website'})
+            continue
+        
+        # Upload images if possible
+        uploaded = []
+        image_paths = image_files or []
+        if image_paths and site_config.get('wp_user'):
+            try:
+                uploaded = wp_client.upload_images(image_paths, site_config)
+            except Exception as e:
+                logger.warning(f'Upload ảnh thất bại tại {site_name}: {e}')
+        
+        title = article_data.get('title', '')
+        raw_html = article_data.get('raw_html', '')
+        
+        try:
+            if 'product' in post_type.lower() or 'sản phẩm' in post_type.lower():
+                res = wp_client.publish_product(
+                    title=title, html_content=raw_html,
+                    uploaded_images=uploaded, site_config=site_config,
+                    status=post_status,
+                )
+            else:
+                if not site_config.get('wp_user'):
+                    results.append({'site_name': site_name, 'success': False, 'error': 'Chưa cấu hình WP_USER để đăng Blog Post'})
+                    continue
+                res = wp_client.publish_post(
+                    title=title, html_content=raw_html,
+                    uploaded_images=uploaded, site_config=site_config,
+                    status=post_status,
+                )
+            results.append({
+                'site_name': site_name, 'success': True,
+                'post_id': res.get('post_id'), 'post_url': res.get('post_url'),
+                'edit_url': res.get('edit_url'), 'status': res.get('status'),
+                'error': None,
+            })
+        except Exception as e:
+            logger.exception(f'Lỗi đăng bài lên {site_name}')
+            results.append({'site_name': site_name, 'success': False, 'error': str(e)})
+    
+    return results
+
+
+def make_preview_html(html_content: str, image_files: list[str] | None) -> str:
+    """Thay [IMAGE_PLACEHOLDER_N] bằng ảnh local để preview."""
+    if not image_files:
+        return re.sub(r'\[IMAGE_PLACEHOLDER_\d+\]', '', html_content)
+    
+    paths = image_files if isinstance(image_files[0], str) else [f.name for f in image_files]
+    
+    def replace_placeholder(match):
+        n = int(match.group(1)) - 1
+        idx = min(n, len(paths) - 1)
+        return (
+            f'<figure style="text-align:center;margin:20px 0;">'
+            f'<img src="/file={paths[idx]}" style="max-width:100%;height:auto;border-radius:4px;" />'
+            f'</figure>'
+        )
+    
+    return re.sub(r'\[IMAGE_PLACEHOLDER_(\d+)\]', replace_placeholder, html_content)

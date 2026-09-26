@@ -1,5 +1,5 @@
 """
-modules/scraper.py
+core/scraper.py
 Đọc nội dung chính từ một URL web.
 Tự động lọc bỏ: menu, header, footer, sidebar, quảng cáo.
 """
@@ -8,6 +8,8 @@ import httpx
 from bs4 import BeautifulSoup
 import re
 import logging
+from concurrent.futures import ThreadPoolExecutor
+from tenacity import retry, stop_after_attempt, wait_fixed
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +36,16 @@ TAGS_TO_REMOVE = [
     "div[class*='sidebar']",
 ]
 
+_scrape_cache: dict[str, str] = {}
+
+
+@retry(stop=stop_after_attempt(2), wait=wait_fixed(2), reraise=True)
+def _fetch_html(url: str) -> str:
+    """Tải HTML từ URL với cơ chế tự động thử lại (retry)."""
+    response = httpx.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT, follow_redirects=True)
+    response.raise_for_status()
+    return response.text
+
 
 def scrape_article(url: str) -> str:
     """
@@ -46,15 +58,18 @@ def scrape_article(url: str) -> str:
         Chuỗi văn bản thuần, đã lọc bỏ nội dung thừa.
         Trả về chuỗi rỗng nếu không tải được.
     """
+    if url in _scrape_cache:
+        logger.info(f"Dùng cache cho URL: {url}")
+        return _scrape_cache[url]
+
     try:
         logger.info(f"Đang tải: {url}")
-        response = httpx.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT, follow_redirects=True)
-        response.raise_for_status()
+        html_text = _fetch_html(url)
     except Exception as e:
-        logger.warning(f"Không tải được {url}: {e}")
+        logger.warning(f"Không tải được {url} sau các lần thử: {e}")
         return ""
 
-    soup = BeautifulSoup(response.text, "lxml")
+    soup = BeautifulSoup(html_text, "lxml")
 
     # Xóa các thẻ không cần thiết
     for selector in TAGS_TO_REMOVE:
@@ -86,12 +101,14 @@ def scrape_article(url: str) -> str:
     content = re.sub(r"\n{3,}", "\n\n", content)
     content = re.sub(r" {2,}", " ", content)
 
-    return content.strip()
+    final_content = content.strip()
+    _scrape_cache[url] = final_content
+    return final_content
 
 
 def scrape_multiple(urls: list[str]) -> list[dict]:
     """
-    Tải nhiều URL, trả về danh sách kết quả.
+    Tải nhiều URL, trả về danh sách kết quả (dùng ThreadPoolExecutor).
 
     Args:
         urls: Danh sách URL cần đọc.
@@ -100,11 +117,19 @@ def scrape_multiple(urls: list[str]) -> list[dict]:
         List[{"url": str, "content": str}]
     """
     results = []
-    for url in urls:
-        content = scrape_article(url)
+    
+    def worker(u: str) -> dict | None:
+        content = scrape_article(u)
         if content:
-            results.append({"url": url, "content": content})
-            logger.info(f"✓ Đọc được {len(content)} ký tự từ {url}")
+            logger.info(f"✓ Đọc được {len(content)} ký tự từ {u}")
+            return {"url": u, "content": content}
         else:
-            logger.warning(f"✗ Bỏ qua {url} (không đọc được nội dung)")
+            logger.warning(f"✗ Bỏ qua {u} (không đọc được nội dung)")
+            return None
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        for res in executor.map(worker, urls):
+            if res:
+                results.append(res)
+                
     return results

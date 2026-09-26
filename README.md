@@ -72,29 +72,39 @@ python app.py
 ### Tab 1: ✍️ Tạo & Đăng Bài Viết
 
 1. **Chọn website cần đăng:** Tích chọn 1 hoặc nhiều website trong danh sách.
-2. **Bật/Tắt tính năng Randomize:** 
+2. **Chọn Prompt Template:** Chọn mẫu prompt viết bài phù hợp theo từng ngành hàng.
+3. **Bật/Tắt tính năng Randomize:** 
    - *Bật (Mặc định):* Mỗi trang web sẽ nhận được một phiên bản bài viết độc bản, phong cách hành văn và góc nhìn khác nhau.
    - *Tắt:* Tất cả các website được chọn sẽ dùng chung một nội dung bài viết.
-3. **Nhập thông tin sản phẩm:**
+4. **Nhập thông tin sản phẩm:**
    - **Tên sản phẩm:** (Ví dụ: `Pa lăng cáp điện 1T x 12M`)
    - **Gợi ý viết bài (Tùy chọn):** Nhập yêu cầu riêng (ví dụ: *"Nhấn mạnh động cơ 100% dây đồng và chuẩn kháng nước IP54"*).
    - **Hình ảnh sản phẩm:** Tải lên một hoặc nhiều hình ảnh thực tế.
    - **Nguồn tham khảo (Tùy chọn):** Nhập URL bài viết mẫu hoặc để trống để AI tự động tìm kiếm.
-4. **Tạo bài viết:** Nhấn nút **"🚀 Bắt đầu tạo bài viết"** và chờ AI xử lý.
-5. **Xem trước (Preview):** 
+5. **Tạo bài viết:** Nhấn nút **"🚀 Bắt đầu tạo bài viết"** và chờ AI xử lý.
+6. **Xem trước & Chỉnh sửa trực tiếp:** 
    - Dùng ô chọn website để kiểm tra nội dung và tiêu đề bài viết tạo cho từng trang.
-   - Có thể chỉnh sửa trực tiếp nội dung hoặc tiêu đề tại ô xem trước.
-6. **Đăng bài:** Chọn hình thức đăng (*Sản phẩm WooCommerce* hoặc *Bài viết Blog*) rồi nhấn **"📤 Đăng lên tất cả website đã chọn"**.
+   - Chỉnh sửa nhanh tiêu đề ngay trên ô text.
+   - Bấm **"🔄 Chuyển đổi chế độ (Xem / Chỉnh sửa HTML)"** để mở trình sửa mã HTML trực tiếp, sau đó bấm **"💾 Lưu mã HTML đã sửa"**.
+7. **Đăng bài:** Chọn hình thức đăng (*Sản phẩm WooCommerce* hoặc *Bài viết Blog*) rồi nhấn **"📤 Đăng lên tất cả website đã chọn"**.
 
 ---
 
-### Tab 2: ⚙️ Quản Lý Website
+### Tab 2: 🕒 Lịch Sử Đăng Bài
+
+1. **Xem danh sách bài đăng:** Bảng thống kê chi tiết toàn bộ các bài viết và sản phẩm đã tạo và đăng qua hệ thống.
+2. **Lọc theo website:** Dễ dàng lọc bài theo từng website cụ thể hoặc xem tất cả.
+3. **Tra cứu nhanh:** Hiển thị trực tiếp trạng thái đăng, ngày giờ, ID và link mở thẳng bài viết trên WordPress/WooCommerce.
+
+---
+
+### Tab 3: ⚙️ Quản Lý Website
 
 1. **Xem danh sách website:** Bảng thống kê hiển thị tên website, đường dẫn URL, và trạng thái cấu hình.
 2. **Thêm website mới:**
    - Trong dropdown chọn: `➕ Thêm website mới`.
    - Nhập **Tên hiển thị**, **URL**, **WooCommerce Client Key (`ck_...`)**, **Client Secret (`cs_...`)**.
-   - Nhấn **"🔍 Kiểm tra kết nối"** để đảm bảo API key hoạt động chính xác.
+   - Nhấn **"🔌 Kiểm tra kết nối"** để hệ thống kiểm tra cả WordPress REST API và WooCommerce API.
    - Nhấn **"💾 Lưu cấu hình website"**.
 3. **Chỉnh sửa / Xóa:**
    - Chọn website cần sửa trong danh sách để cập nhật thông tin hoặc bấm **"🗑️ Xóa website này"**.
@@ -103,5 +113,6 @@ python app.py
 
 ## 🔒 Bảo Mật & Lưu Trữ Dữ Liệu
 
-- **Bảo mật API Key:** Toàn bộ thông tin nhạy cảm (API Key, Secret Key, mật khẩu ứng dụng) được lưu trong `.env` và `config/sites.json`. Cả hai file đều nằm trong `.gitignore` và không bao giờ bị lộ lên GitHub.
-- **Trạng thái bài đăng:** Mặc định các bài đăng sẽ được đưa lên website ở trạng thái **Bản nháp (Draft)** để quản trị viên có thể xem xét và phê duyệt trước khi xuất bản chính thức.
+- **Cơ sở dữ liệu SQLite & Mã hóa Fernet:** Toàn bộ thông tin nhạy cảm (WooCommerce Client Key, Secret Key, WordPress Application Password) được mã hóa bằng thuật toán `Fernet` (khóa mã hóa sinh ngẫu nhiên lưu trong `.env`) và lưu trữ trong CSDL SQLite (`data/wordpress_agent.db`).
+- **An toàn mã nguồn:** Các file nhạy cảm (`.env`, `data/`, `config/sites.json*`) đều nằm trong `.gitignore` và không bao giờ bị đẩy lên kho mã nguồn.
+- **Trạng thái bài đăng an toàn:** Mặc định các bài đăng sẽ được đưa lên website ở trạng thái **Bản nháp (Draft)** để quản trị viên có thể xem xét và phê duyệt trước khi xuất bản chính thức.

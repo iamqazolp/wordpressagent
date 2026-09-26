@@ -1,14 +1,16 @@
 """
-modules/ai_writer.py
+core/ai_writer.py
 Dùng Google Gemini để viết bài quảng cáo sản phẩm HTML hoàn chỉnh từ các tài liệu tham khảo.
 """
 from __future__ import annotations
 import logging
 import re
 from pathlib import Path
+import nh3
 
 from google import genai
 from google.genai import types
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from config import settings
 
@@ -17,6 +19,19 @@ logger = logging.getLogger(__name__)
 # Đường dẫn file prompt template
 PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "write_post.txt"
 
+_ALLOWED_TAGS = {'p','h1','h2','h3','h4','h5','h6','table','thead','tbody','tr','th','td',
+                 'ul','ol','li','strong','em','b','i','a','img','figure','figcaption',
+                 'span','br','hr','div','sup','sub'}
+_ALLOWED_ATTRS = {
+    'a': {'href','title','target'},
+    'img': {'src','alt','width','height','style','decoding','class'},
+    'span': {'style'},
+    'figure': {'id','style','class'},
+    'td': {'colspan','rowspan'},
+    'th': {'colspan','rowspan'},
+    'table': {'class','style'},
+    'div': {'class','style'},
+}
 
 def _get_client() -> genai.Client:
     """Khởi tạo Gemini client hỗ trợ base_url tùy chỉnh (như shopaikey proxy)."""
@@ -35,7 +50,6 @@ def _get_client() -> genai.Client:
         http_options=http_options,
     )
 
-
 VARIATION_ANGLES = [
     "Nhấn mạnh vào hiệu năng vận hành thực tế, công suất tải và khả năng làm việc liên tục.",
     "Nhấn mạnh vào độ an toàn kỹ thuật, hệ thống phanh tự động và độ tin cậy cơ khí.",
@@ -43,6 +57,16 @@ VARIATION_ANGLES = [
     "Nhấn mạnh vào chất lượng vật liệu gia công, độ bền cáp/xích và hướng dẫn kỹ thuật chuẩn.",
 ]
 
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=30), reraise=True)
+def _call_gemini(client, model, prompt, temperature):
+    return client.models.generate_content(
+        model=model,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            temperature=temperature,
+            max_output_tokens=8192,
+        ),
+    )
 
 def write_post(
     product_name: str,
@@ -52,6 +76,7 @@ def write_post(
     user_notes: str = "",
     variation_index: int = 0,
     total_variations: int = 1,
+    template_content: str | None = None,
 ) -> tuple[str, str]:
     """
     Dùng Gemini viết bài blog/quảng cáo sản phẩm HTML hoàn chỉnh với nhiều thành phần phong phú.
@@ -65,6 +90,7 @@ def write_post(
         user_notes:          Gợi ý, ghi chú hoặc yêu cầu riêng từ người dùng.
         variation_index:     Chỉ số phiên bản (1, 2, 3...) khi bật randomize cho nhiều site.
         total_variations:    Tổng số website cần tạo bài khác nhau.
+        template_content:    Nội dung prompt template tùy chỉnh. Nếu None, dùng template mặc định.
 
     Returns:
         Tuple (title: str, html_content: str)
@@ -95,7 +121,10 @@ def write_post(
         )
 
     # Đọc prompt template
-    prompt_template = PROMPT_PATH.read_text(encoding="utf-8")
+    if template_content is not None:
+        prompt_template = template_content
+    else:
+        prompt_template = PROMPT_PATH.read_text(encoding="utf-8")
 
     # Điền thông tin vào template
     prompt = prompt_template.format(
@@ -110,14 +139,7 @@ def write_post(
 
     try:
         client = _get_client()
-        response = client.models.generate_content(
-            model=settings.GEMINI_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=temperature,
-                max_output_tokens=8192,
-            ),
-        )
+        response = _call_gemini(client, settings.GEMINI_MODEL, prompt, temperature)
         html_content = response.text.strip()
 
     except Exception as e:
@@ -128,6 +150,8 @@ def write_post(
     html_content = re.sub(r"^```html?\s*", "", html_content, flags=re.IGNORECASE)
     html_content = re.sub(r"\s*```$", "", html_content)
     html_content = html_content.strip()
+
+    html_content = nh3.clean(html_content, tags=_ALLOWED_TAGS, attributes=_ALLOWED_ATTRS)
 
     title = _generate_title(product_name, html_content)
     logger.info(f"✓ Viết xong bài cho {site_name}: {title}")

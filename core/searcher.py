@@ -1,5 +1,5 @@
 """
-modules/searcher.py
+core/searcher.py
 Tìm kiếm bài viết tham khảo trên Google qua SerpAPI.
 Hỗ trợ cả tìm tự động và nhập URL tay.
 """

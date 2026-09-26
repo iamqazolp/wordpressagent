@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 # PIPELINE CHÍNH
 # ═══════════════════════════════════════════════════════════════
 
-def run_pipeline(product_name, image_files, extra_urls_text, site_name, progress=gr.Progress()):
+def run_pipeline(product_name, image_files, extra_urls_text, user_notes_text, site_name, progress=gr.Progress()):
     """
     Chạy toàn bộ pipeline: tìm kiếm → đọc bài → viết AI → trả về preview.
     Returns: (title, html_preview, raw_html, status_message)
@@ -67,6 +67,7 @@ def run_pipeline(product_name, image_files, extra_urls_text, site_name, progress
             reference_contents=ref_contents,
             image_count=image_count,
             site_name=site_name,
+            user_notes=user_notes_text,
         )
         logs.append(f"🤖 Đã viết xong bài: {title}")
 
@@ -218,6 +219,11 @@ with gr.Blocks(
                     extra_urls_input = gr.Textbox(
                         label="🔗 URL tham khảo thêm (tùy chọn)",
                         placeholder="Mỗi URL một dòng\nhttps://example.com/bai-viet-1",
+                        lines=2,
+                    )
+                    user_notes_input = gr.Textbox(
+                        label="💡 Gợi ý / Yêu cầu riêng cho AI (Tùy chọn)",
+                        placeholder="VD: Nhấn mạnh lõi đồng 100%, bảo hành 18 tháng, tặng kèm móc phụ, phù hợp cho xưởng mộc...",
                         lines=3,
                     )
                     site_selector = gr.Dropdown(
@@ -289,13 +295,13 @@ Sau đó khởi động lại app.
 
     # ── Kết nối sự kiện ─────────────────────────────────────
 
-    def _on_create(product, images, extra_urls, site, progress=gr.Progress()):
-        title, preview, raw_html, status = run_pipeline(product, images, extra_urls, site, progress)
+    def _on_create(product, images, extra_urls, user_notes, site, progress=gr.Progress()):
+        title, preview, raw_html, status = run_pipeline(product, images, extra_urls, user_notes, site, progress)
         return title, preview, raw_html, status
 
     create_btn.click(
         fn=_on_create,
-        inputs=[product_input, image_input, extra_urls_input, site_selector],
+        inputs=[product_input, image_input, extra_urls_input, user_notes_input, site_selector],
         outputs=[title_output, preview_output, raw_html_state, status_box],
         show_progress=True,
     )

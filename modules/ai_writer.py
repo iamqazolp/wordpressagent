@@ -41,6 +41,7 @@ def write_post(
     reference_contents: list[dict],
     image_count: int = 0,
     site_name: str = "Website",
+    user_notes: str = "",
 ) -> tuple[str, str]:
     """
     Dùng Gemini viết bài blog/quảng cáo sản phẩm HTML hoàn chỉnh với nhiều thành phần phong phú.
@@ -50,6 +51,7 @@ def write_post(
         reference_contents:  List[{"url": str, "content": str}] từ scraper.
         image_count:         Số ảnh sẽ chèn (để đặt placeholder).
         site_name:           Tên website hiển thị trong bài.
+        user_notes:          Gợi ý, ghi chú hoặc yêu cầu riêng từ người dùng.
 
     Returns:
         Tuple (title: str, html_content: str)
@@ -75,6 +77,7 @@ def write_post(
         site_name=site_name,
         reference_articles=ref_text,
         image_count=image_count,
+        user_notes=user_notes.strip() if user_notes and user_notes.strip() else "(Không có yêu cầu riêng - viết theo thông số chuẩn)",
     )
 
     logger.info(f"Đang gọi Gemini ({settings.GEMINI_MODEL}) để viết bài về: {product_name}")

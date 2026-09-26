@@ -7,11 +7,16 @@ Viết bài mô tả sản phẩm SÚC TÍCH, THỰC TẾ, ĐÚNG TRỌNG TÂM K
 {reference_articles}
 ==== HẾT TÀI LIỆU THAM KHẢO ====
 
-NGUYÊN TẮC CHỐNG VĂN SÁO RỖNG (ANTI-SLOP):
-1. ĐI THẲNG VÀO THÔNG SỐ VÀ KỸ THUẬT: Nói rõ chất liệu (đồng, thép hợp kim, gang đúc...), công suất, điện áp, nguyên lý, ứng dụng thực tế. Không viết chung chung.
-2. TUYỆT ĐỐI KHÔNG DÙNG TỪ HOA MỸ, THỔI PHỒNG: Cấm các từ ngữ phóng đại sáo rỗng như: "khoản đầu tư chiến lược", "đột phá", "hoàn hảo", "làm hài lòng cả chuyên gia khó tính nhất", "sống còn", "tuyệt phẩm"...
-3. NGẮN GỌN, MỖI Ý 1-2 CÂU: Không bôi chữ kéo dài bài. Tổng dung lượng bài chỉ khoảng 500 – 700 từ.
-4. KHÔNG BỊA ĐẶT số điện thoại, không bịa đặt địa chỉ showroom/văn phòng.
+==== GỢI Ý / YÊU CẦU RIÊNG TỪ NGƯỜI DÙNG ====
+{user_notes}
+==== HẾT GỢI Ý RIÊNG ====
+
+NGUYÊN TẮC QUAN TRỌNG:
+- ƯU TIÊN GỢI Ý CỦA NGƯỜI DÙNG: Nếu người dùng có đưa ra gợi ý/yêu cầu riêng ở trên (nhấn mạnh tính năng, thông số đặc biệt, bảo hành, ứng dụng, phụ kiện tặng kèm...), hãy ĐẶC BIỆT LỒNG GHÉP chính xác các thông tin này vào bài viết và bảng thông số.
+- ĐI THẲNG VÀO THÔNG SỐ VÀ KỸ THUẬT: Nói rõ chất liệu (đồng, thép hợp kim, gang đúc...), công suất, điện áp, nguyên lý, ứng dụng thực tế. Không viết chung chung.
+- TUYỆT ĐỐI KHÔNG DÙNG TỪ HOA MỸ, THỔI PHỒNG: Cấm các từ ngữ phóng đại sáo rỗng như: "khoản đầu tư chiến lược", "đột phá", "hoàn hảo", "làm hài lòng cả chuyên gia khó tính nhất", "sống còn", "tuyệt phẩm"...
+- NGẮN GỌN, MỖI Ý 1-2 CÂU: Không bôi chữ kéo dài bài. Tổng dung lượng bài chỉ khoảng 400 – 600 từ.
+- KHÔNG BỊA ĐẶT số điện thoại, không bịa đặt địa chỉ showroom/văn phòng.
 
 CẤU TRÚC BÀI VIẾT (SỬ DỤNG TIÊU ĐỀ XANH #1381f0):
 

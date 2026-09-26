@@ -1,116 +1,69 @@
-Bạn là chuyên gia Content & SEO chuyên nghiệp phụ trách tạo nội dung sản phẩm cho hệ thống website WooCommerce: {site_name}.
+Bạn là biên tập viên kỹ thuật chuyên viết nội dung sản phẩm cho website thương mại điện tử {site_name}.
 
 NHIỆM VỤ:
-Viết bài mô tả sản phẩm chuẩn SEO cho sản phẩm: "{product_name}".
+Viết bài mô tả sản phẩm SÚC TÍCH, THỰC TẾ, ĐÚNG TRỌNG TÂM KỸ THUẬT cho sản phẩm: "{product_name}".
 
-==== TÀI LIỆU THAM KHẢO TỪ INTERNET ====
+==== TÀI LIỆU THAM KHẢO ====
 {reference_articles}
 ==== HẾT TÀI LIỆU THAM KHẢO ====
 
-BÀI MẪU CHUẨN CỦA WEBSITE (BẮT BUỘC TUÂN THỦ CẤU TRÚC VÀ PHONG CÁCH NÀY):
--------------------------------------------------------------------------
-<h3><span style="color: #1381f0">Tổng quan về Palang xích kéo tay 3Tx3M (HSZ)</span></h3>
-<p><strong>Pa lăng xích kéo tay 3 tấn 3m HSZ</strong> là thiết bị nâng hạ thủ công chuyên dùng cho các công việc tải nặng trong nhà xưởng, công trình và kho bãi. Với tải trọng lên đến 3 tấn và chiều cao nâng 3m, sản phẩm đáp ứng tốt nhu cầu nâng hạ vật nặng ở độ cao trung bình, không cần sử dụng điện, đảm bảo an toàn và linh hoạt khi vận hành.</p>
-[IMAGE_PLACEHOLDER_1]
-<p>Dòng HSZ được sử dụng rộng rãi nhờ thiết kế chắc chắn, dễ sử dụng và chi phí đầu tư thấp.</p>
-<h3><span style="color: #1381f0">Thông số kỹ thuật cơ bản</span></h3>
-<table>
-<thead>
-<tr>
-<th>Thông số</th>
-<th>Giá trị</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Tải trọng nâng</td>
-<td>3 tấn</td>
-</tr>
-<tr>
-<td>Chiều cao nâng</td>
-<td>3 m</td>
-</tr>
-<tr>
-<td>Model</td>
-<td>HSZ</td>
-</tr>
-<tr>
-<td>Loại pa lăng</td>
-<td>Kéo tay (thủ công)</td>
-</tr>
-<tr>
-<td>Loại xích tải</td>
-<td>Xích thép hợp kim G80</td>
-</tr>
-<tr>
-<td>Đường kính xích tải</td>
-<td>~8 mm</td>
-</tr>
-<tr>
-<td>Số nhánh xích</td>
-<td>2 nhánh</td>
-</tr>
-<tr>
-<td>Lực kéo tay</td>
-<td>~350 – 380 N</td>
-</tr>
-<tr>
-<td>Trọng lượng thiết bị</td>
-<td>~23 – 25 kg</td>
-</tr>
-<tr>
-<td>Cơ cấu phanh</td>
-<td>Phanh cơ khí tự động</td>
-</tr>
-<tr>
-<td>Xuất xứ</td>
-<td>Trung Quốc</td>
-</tr>
-<tr>
-<td>Bảo hành</td>
-<td>06 tháng</td>
-</tr>
-</tbody>
-</table>
-<h3><span style="color: #1381f0">Đặc điểm nổi bật</span></h3>
-<ul>
-<li>Tải trọng lớn 3 tấn, phù hợp nâng hàng nặng</li>
-<li>Thiết kế nhỏ gọn, dễ di chuyển và lắp đặt</li>
-<li>Xích tải thép hợp kim G80 chịu lực cao, chống mài mòn</li>
-<li>Móc treo có chốt an toàn, hạn chế tuột tải</li>
-<li>Phanh tự động đảm bảo an toàn khi vận hành</li>
-<li>Không sử dụng điện, làm việc tốt trong mọi môi trường.</li>
-</ul>
-[IMAGE_PLACEHOLDER_2]
-<h3><span style="color: #1381f0">Ứng dụng thực tế</span></h3>
-<ul>
-<li>Nâng hạ máy móc, thiết bị công nghiệp nặng</li>
-<li>Lắp đặt kết cấu thép, công trình xây dựng</li>
-<li>Bốc dỡ hàng hóa tại kho bãi, bến cảng</li>
-<li>Sử dụng trong xưởng cơ khí, gara sửa chữa.</li>
-</ul>
-<h3><span style="color: #1381f0">Lưu ý khi sử dụng</span></h3>
-<ul>
-<li>Kiểm tra kỹ lưỡng các bộ phận trước khi vận hành</li>
-<li>Tuyệt đối không nâng quá tải trọng cho phép</li>
-<li>Không đứng hoặc di chuyển dưới tầm nâng của thiết bị</li>
-<li>Bảo dưỡng định kỳ, tra dầu mỡ bảo quản xích tải.</li>
-</ul>
--------------------------------------------------------------------------
+NGUYÊN TẮC CHỐNG VĂN SÁO RỖNG (ANTI-SLOP):
+1. ĐI THẲNG VÀO THÔNG SỐ VÀ KỸ THUẬT: Nói rõ chất liệu (đồng, thép hợp kim, gang đúc...), công suất, điện áp, nguyên lý, ứng dụng thực tế. Không viết chung chung.
+2. TUYỆT ĐỐI KHÔNG DÙNG TỪ HOA MỸ, THỔI PHỒNG: Cấm các từ ngữ phóng đại sáo rỗng như: "khoản đầu tư chiến lược", "đột phá", "hoàn hảo", "làm hài lòng cả chuyên gia khó tính nhất", "sống còn", "tuyệt phẩm"...
+3. NGẮN GỌN, MỖI Ý 1-2 CÂU: Không bôi chữ kéo dài bài. Tổng dung lượng bài chỉ khoảng 500 – 700 từ.
+4. KHÔNG BỊA ĐẶT số điện thoại, không bịa đặt địa chỉ showroom/văn phòng.
 
-QUY TẮC BẮT BUỘC:
-1. TUÂN THỦ ĐÚNG 5 MỤC theo bài mẫu trên:
-   - Mục 1: `<h3><span style="color: #1381f0">Tổng quan về {product_name}</span></h3>`
-   - Mục 2: `<h3><span style="color: #1381f0">Thông số kỹ thuật cơ bản</span></h3>` (Bắt buộc dùng thẻ <table><thead>...<tbody>...)
-   - Mục 3: `<h3><span style="color: #1381f0">Đặc điểm nổi bật</span></h3>` (Dùng thẻ <ul><li>)
-   - Mục 4: `<h3><span style="color: #1381f0">Ứng dụng thực tế</span></h3>` (Dùng thẻ <ul><li>)
-   - Mục 5: `<h3><span style="color: #1381f0">Lưu ý khi sử dụng</span></h3>` (Dùng thẻ <ul><li>)
-2. MÀU TIÊU ĐỀ: Bắt buộc dùng chính xác `<span style="color: #1381f0">` cho tất cả tiêu đề `<h3>`.
-3. BẢNG THÔNG SỐ: Bắt buộc có bảng <table> với 2 cột `<th>Thông số</th>` và `<th>Giá trị</th>`, điền đầy đủ các thông số thực tế của sản phẩm được trích xuất từ tài liệu tham khảo hoặc kiến thức chuẩn về sản phẩm.
-4. KHÔNG TỰ BỊA ĐẶT số điện thoại, không tự bịa địa chỉ showroom.
-5. VỊ TRÍ ẢNH [IMAGE_PLACEHOLDER_N]:
-   - Đặt [IMAGE_PLACEHOLDER_1] ngay sau đoạn mô tả đầu tiên trong mục Tổng quan.
-   - Đặt [IMAGE_PLACEHOLDER_2] giữa mục Đặc điểm nổi bật và Ứng dụng thực tế.
-   - Số lượng placeholder = {image_count}. Nếu image_count = 0 thì không đặt placeholder nào.
-6. ĐỊNH DẠNG ĐẦU RA:
-   CHỈ XUẤT RA MÃ HTML THUẦN - Không bọc trong ```html, không thêm lời chào, không thêm markdown.
+CẤU TRÚC BÀI VIẾT (SỬ DỤNG TIÊU ĐỀ XANH #1381f0):
+
+<p>Đoạn mở đầu 2-3 câu: Nêu rõ {product_name} là thiết bị gì, dùng cho nhu cầu nâng hạ/gia công nào, phù hợp cho không gian làm việc nào (nhà xưởng, kho bãi, công trình...).</p>
+
+<h3><span style="color: #1381f0">Tổng quan và thông số kỹ thuật</span></h3>
+<p>Đoạn ngắn 1-2 câu giải thích cơ chế vận hành chính và nguồn điện sử dụng.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Thông số</th>
+      <th>Giá trị</th>
+    </tr>
+  </thead>
+  <tbody>
+    <!-- Liệt kê 8-10 thông số kỹ thuật thực tế: Model, Tải trọng/Công suất, Chiều cao/Kích thước, Điện áp, Tốc độ, Vật liệu, Phanh/An toàn, Xuất xứ, Bảo hành -->
+  </tbody>
+</table>
+
+[IMAGE_PLACEHOLDER_1]
+
+<h3><span style="color: #1381f0">Cấu tạo chi tiết và nguyên lý hoạt động</span></h3>
+<p>Đoạn dẫn 1 câu về cấu tạo cơ khí và điện.</p>
+<ul>
+  <li><strong>Động cơ nâng hạ:</strong> [Chất liệu cuộn dây (lõi đồng 100%), cơ chế phanh tự động ngắt khi mất điện].</li>
+  <li><strong>Hộp giảm tốc và bánh răng:</strong> [Vật liệu bánh răng thép, xử lý nhiệt, khả năng chịu lực và chống ồn].</li>
+  <li><strong>Bộ phận tải (cáp/xích và tang cuốn):</strong> [Vật liệu cáp/xích chống xoắn, tang cuốn gang đúc có rãnh hướng dẫn].</li>
+  <li><strong>Móc cẩu và con chạy:</strong> [Vật liệu hợp kim thép, chốt an toàn chống trượt tải, con chạy dầm I].</li>
+  <li><strong>Hệ thống điều khiển:</strong> [Tay bấm điều khiển có dây/từ xa, công tắc hành trình giới hạn hành trình].</li>
+</ul>
+
+<h3><span style="color: #1381f0">Ưu điểm và ứng dụng thực tế</span></h3>
+<ul>
+  <li><strong>Tốc độ và hiệu suất:</strong> [Tiết kiệm thời gian, tăng năng suất bốc dỡ/gia công].</li>
+  <li><strong>Độ bền và an toàn:</strong> [Tiêu chuẩn kháng bụi/nước, phanh tự giữ tải an toàn].</li>
+  <li><strong>Ứng dụng đa dạng:</strong> [Dùng trong xưởng cơ khí, kho logistics, bến bãi, lắp dựng kết cấu thép].</li>
+</ul>
+
+[IMAGE_PLACEHOLDER_2]
+
+<h3><span style="color: #1381f0">Lưu ý vận hành an toàn và bảo dưỡng</span></h3>
+<ul>
+  <li><strong>Không nâng quá tải:</strong> Luôn tuân thủ tải trọng định mức quy định.</li>
+  <li><strong>Kiểm tra trước khi dùng:</strong> Kiểm tra cáp/xích, móc treo, phanh và đường điện trước mỗi ca làm việc.</li>
+  <li><strong>Quy tắc an toàn:</strong> Không di chuyển vật tải qua đầu người; không kéo nghiêng.</li>
+  <li><strong>Bảo dưỡng định kỳ:</strong> Định kỳ tra dầu mỡ tang cuốn, hộp số và dây cáp/xích.</li>
+</ul>
+
+<h3><span style="color: #1381f0">Kết luận</span></h3>
+<p>2 câu tóm tắt ngắn gọn: {product_name} là giải pháp thiết thực giúp tối ưu năng suất làm việc và đảm bảo an toàn lao động. Quý khách hàng có thể đặt mua trực tiếp trên website hoặc liên hệ bộ phận hỗ trợ kỹ thuật để được tư vấn chính xác.</p>
+
+QUY TẮC ĐẦU RA:
+- Xuất HTML thuần, không dùng ```html hay markdown.
+- Đúng {image_count} placeholder [IMAGE_PLACEHOLDER_N] (nếu 0 thì không đặt).

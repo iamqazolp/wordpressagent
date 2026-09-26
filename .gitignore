@@ -1,5 +1,6 @@
 # Bảo mật - không đưa lên Git
 .env
+config/sites.json
 
 # Python
 __pycache__/

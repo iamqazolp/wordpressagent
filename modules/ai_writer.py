@@ -36,15 +36,26 @@ def _get_client() -> genai.Client:
     )
 
 
+VARIATION_ANGLES = [
+    "Nhấn mạnh vào hiệu năng vận hành thực tế, công suất tải và khả năng làm việc liên tục.",
+    "Nhấn mạnh vào độ an toàn kỹ thuật, hệ thống phanh tự động và độ tin cậy cơ khí.",
+    "Nhấn mạnh vào ứng dụng đa ngành trong công xưởng, kho bãi và bài toán tối ưu chi phí.",
+    "Nhấn mạnh vào chất lượng vật liệu gia công, độ bền cáp/xích và hướng dẫn kỹ thuật chuẩn.",
+]
+
+
 def write_post(
     product_name: str,
     reference_contents: list[dict],
     image_count: int = 0,
     site_name: str = "Website",
     user_notes: str = "",
+    variation_index: int = 0,
+    total_variations: int = 1,
 ) -> tuple[str, str]:
     """
     Dùng Gemini viết bài blog/quảng cáo sản phẩm HTML hoàn chỉnh với nhiều thành phần phong phú.
+    Hỗ trợ tạo nội dung độc bản (randomize/variation) khi đăng lên nhiều website khác nhau.
 
     Args:
         product_name:        Tên sản phẩm.
@@ -52,11 +63,11 @@ def write_post(
         image_count:         Số ảnh sẽ chèn (để đặt placeholder).
         site_name:           Tên website hiển thị trong bài.
         user_notes:          Gợi ý, ghi chú hoặc yêu cầu riêng từ người dùng.
+        variation_index:     Chỉ số phiên bản (1, 2, 3...) khi bật randomize cho nhiều site.
+        total_variations:    Tổng số website cần tạo bài khác nhau.
 
     Returns:
         Tuple (title: str, html_content: str)
-        - title: Tiêu đề bài viết
-        - html_content: Nội dung bài dạng HTML phong phú
     """
     # Ghép nội dung tham khảo
     if reference_contents:
@@ -68,6 +79,21 @@ def write_post(
     else:
         ref_text = "(Không có tài liệu tham khảo - hãy viết dựa trên kiến thức chuyên môn về sản phẩm này)"
 
+    # Nếu có yêu cầu biến thể độc bản (Randomize)
+    variation_instruction = ""
+    temperature = 0.7
+    if total_variations > 1 and variation_index > 0:
+        angle = VARIATION_ANGLES[(variation_index - 1) % len(VARIATION_ANGLES)]
+        temperature = 0.85  # Tăng tính sáng tạo để từ ngữ phong phú hơn
+        variation_instruction = (
+            f"\n\n==== YÊU CẦU ĐỘC BẢN CHO WEBSITE {site_name} (Phiên bản {variation_index}/{total_variations}) ====\n"
+            f"- MỤC TIÊU: Tạo bài viết ĐỘC LẬP về câu chữ để tránh thuật toán trùng lặp nội dung (Duplicate Content) của Google.\n"
+            f"- Góc nhìn trọng tâm cho phiên bản này: {angle}\n"
+            f"- Hãy thay đổi cách mở bài, dùng các từ đồng nghĩa và cấu trúc câu khác biệt khi phân tích cấu tạo, ưu điểm và ứng dụng.\n"
+            f"- Bắt buộc giữ nguyên và bảo lưu 100% các thông số kỹ thuật chuẩn xác trong bảng <table>.\n"
+            f"==== HẾT YÊU CẦU ĐỘC BẢN ===="
+        )
+
     # Đọc prompt template
     prompt_template = PROMPT_PATH.read_text(encoding="utf-8")
 
@@ -77,10 +103,10 @@ def write_post(
         site_name=site_name,
         reference_articles=ref_text,
         image_count=image_count,
-        user_notes=user_notes.strip() if user_notes and user_notes.strip() else "(Không có yêu cầu riêng - viết theo thông số chuẩn)",
+        user_notes=(user_notes.strip() if user_notes and user_notes.strip() else "(Không có yêu cầu riêng)") + variation_instruction,
     )
 
-    logger.info(f"Đang gọi Gemini ({settings.GEMINI_MODEL}) để viết bài về: {product_name}")
+    logger.info(f"Đang gọi Gemini ({settings.GEMINI_MODEL}) để viết bài về '{product_name}' cho site '{site_name}' (var={variation_index}/{total_variations})...")
 
     try:
         client = _get_client()
@@ -88,7 +114,7 @@ def write_post(
             model=settings.GEMINI_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
-                temperature=0.7,
+                temperature=temperature,
                 max_output_tokens=8192,
             ),
         )
@@ -104,7 +130,7 @@ def write_post(
     html_content = html_content.strip()
 
     title = _generate_title(product_name, html_content)
-    logger.info(f"✓ Viết xong bài: {title}")
+    logger.info(f"✓ Viết xong bài cho {site_name}: {title}")
     return title, html_content
 
 

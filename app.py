@@ -62,17 +62,25 @@ def main():
     else:
         print("ℹ  SerpAPI Key: Chưa có (sẽ dùng URL tham khảo thủ công)")
 
+    # Khởi động Post Scheduler (APScheduler)
+    from core.scheduler import init_scheduler
+    init_scheduler()
+
     # Tạo và khởi chạy Gradio UI
     from ui.main_ui import create_app
     import gradio as gr
+    import os
 
     demo = create_app()
 
-    print(f"\n👉 Mở trình duyệt tại: http://localhost:7860\n")
+    host = os.getenv("HOST", "127.0.0.1")
+    port = int(os.getenv("PORT", "7860"))
+
+    print(f"\n👉 Mở trình duyệt tại: http://{host}:{port}\n")
 
     demo.launch(
-        server_name="127.0.0.1",
-        server_port=7860,
+        server_name=host,
+        server_port=port,
         share=False,
         inbrowser=True,
         theme=gr.themes.Soft(primary_hue="blue"),

@@ -1,11 +1,14 @@
 """
 core/searcher.py
-Tìm kiếm bài viết tham khảo trên Google qua SerpAPI.
+Tìm kiếm bài viết tham khảo trên Google qua SerpAPI (hoặc DuckDuckGo dự phòng).
 Hỗ trợ cả tìm tự động và nhập URL tay.
 """
 from __future__ import annotations
 import logging
 import unicodedata
+import httpx
+from bs4 import BeautifulSoup
+
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -33,17 +36,19 @@ def search_articles(product_name: str, extra_urls: list[str] | None = None) -> l
         extra_urls:   Danh sách URL người dùng nhập tay thêm.
 
     Returns:
-        List[{"url": str, "title": str, "source": "google"|"manual"}]
+        List[{"url": str, "title": str, "source": "google"|"duckduckgo"|"manual"}]
     """
     # Chuẩn hoá Unicode NFC để sửa lỗi gõ tiếng Việt trên macOS/Windows
     product_name = unicodedata.normalize("NFC", product_name).strip()
     results: list[dict] = []
+    seen_urls = set()
 
     # 1. Thêm URL người dùng nhập tay trước (ưu tiên cao nhất)
     if extra_urls:
         for url in extra_urls:
             url = url.strip()
-            if url and url.startswith("http"):
+            if url and url.startswith("http") and url not in seen_urls:
+                seen_urls.add(url)
                 results.append({
                     "url": url,
                     "title": f"URL tham khảo: {url}",
@@ -51,17 +56,30 @@ def search_articles(product_name: str, extra_urls: list[str] | None = None) -> l
                 })
                 logger.info(f"Thêm URL thủ công: {url}")
 
-    # 2. Tìm tự động qua SerpAPI
-    if settings.SERP_API_KEY:
-        results.extend(_search_via_serpapi(product_name))
-    else:
-        logger.warning("Chưa cấu hình SERP_API_KEY → bỏ qua tìm kiếm tự động")
+    limit = getattr(settings, "SEARCH_RESULT_COUNT", 5)
 
-    logger.info(f"Tổng cộng {len(results)} nguồn tham khảo")
+    # 2. Tìm tự động qua SerpAPI (nếu có key)
+    if settings.SERP_API_KEY:
+        serp_results = _search_via_serpapi(product_name, limit=limit)
+        for r in serp_results:
+            if r["url"] not in seen_urls:
+                seen_urls.add(r["url"])
+                results.append(r)
+
+    # 3. Dự phòng qua DuckDuckGo nếu chưa đủ kết quả hoặc chưa có SerpAPI Key
+    if len(results) < limit:
+        logger.info(f"Đang tìm kiếm dự phòng qua DuckDuckGo cho '{product_name}'...")
+        ddg_results = _search_via_duckduckgo(product_name, limit=(limit - len(results)))
+        for r in ddg_results:
+            if r["url"] not in seen_urls:
+                seen_urls.add(r["url"])
+                results.append(r)
+
+    logger.info(f"Tổng cộng {len(results)} nguồn tham khảo cho '{product_name}'")
     return results
 
 
-def _search_via_serpapi(product_name: str) -> list[dict]:
+def _search_via_serpapi(product_name: str, limit: int = 5) -> list[dict]:
     """Gọi SerpAPI để tìm bài viết tiếng Việt trên Google."""
     try:
         from serpapi import GoogleSearch  # type: ignore
@@ -69,16 +87,15 @@ def _search_via_serpapi(product_name: str) -> list[dict]:
         logger.error("Chưa cài thư viện serpapi. Chạy: pip install google-search-results")
         return []
 
-    # Truy vấn tập trung vào thông số kỹ thuật thực tế thay vì từ hỏi "là gì"
     query = f"{product_name} thông số kỹ thuật"
-    logger.info(f"🔍 Tìm kiếm Google: {query}")
+    logger.info(f"🔍 Tìm kiếm Google qua SerpAPI: {query}")
 
     params = {
         'engine': 'google',
         'q': query,
         'hl': 'vi',
         'gl': 'vn',
-        'num': 8,
+        'num': max(limit * 2, 8),
         'api_key': settings.SERP_API_KEY,
     }
 
@@ -98,12 +115,67 @@ def _search_via_serpapi(product_name: str) -> list[dict]:
 
         url_lower = url.lower()
         if any(bad in url_lower for bad in BLOCKED_DOMAINS):
-            logger.info(f"Bỏ qua trang không phù hợp: {url}")
             continue
 
         results.append({'url': url, 'title': title, 'source': 'google'})
-        logger.info(f"Tìm thấy: {title[:60]}... ({url})")
-        if len(results) >= 4:
+        logger.info(f"SerpAPI tìm thấy: {title[:60]}... ({url})")
+        if len(results) >= limit:
             break
+
+    return results
+
+
+def _search_via_duckduckgo(product_name: str, limit: int = 4) -> list[dict]:
+    """Tìm kiếm dự phòng qua DuckDuckGo HTML khi không có SerpAPI key."""
+    query = f"{product_name} thông số kỹ thuật"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
+    }
+    results = []
+    try:
+        resp = httpx.post(
+            "https://html.duckduckgo.com/html/",
+            data={"q": query},
+            headers=headers,
+            timeout=7,
+            follow_redirects=True,
+        )
+        if resp.status_code != 200:
+            return []
+
+        soup = BeautifulSoup(resp.text, "lxml")
+        for link_elem in soup.select(".result__body"):
+            title_elem = link_elem.select_one(".result__title a")
+            url_elem = link_elem.select_one(".result__url")
+            if not title_elem:
+                continue
+
+            raw_href = title_elem.get("href", "")
+            # DuckDuckGo có thể dùng link redirect dạng /l/?uddg=URL
+            if "uddg=" in raw_href:
+                import urllib.parse
+                parsed = urllib.parse.parse_qs(urllib.parse.urlparse(raw_href).query)
+                url = parsed.get("uddg", [raw_href])[0]
+            elif raw_href.startswith("http"):
+                url = raw_href
+            elif url_elem:
+                url_text = url_elem.get_text(strip=True)
+                url = f"https://{url_text}" if not url_text.startswith("http") else url_text
+            else:
+                continue
+
+            url_lower = url.lower()
+            if any(bad in url_lower for bad in BLOCKED_DOMAINS) or "duckduckgo.com" in url_lower:
+                continue
+
+            title = title_elem.get_text(strip=True) or url
+            results.append({"url": url, "title": title, "source": "duckduckgo"})
+            logger.info(f"DuckDuckGo tìm thấy: {title[:60]}... ({url})")
+            if len(results) >= limit:
+                break
+
+    except Exception as e:
+        logger.warning(f"Lỗi tìm kiếm dự phòng DuckDuckGo: {e}")
 
     return results

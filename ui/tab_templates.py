@@ -154,7 +154,7 @@ def build_tab_templates() -> dict:
             status_output = gr.Textbox(label="Trạng thái", interactive=False)
             
         with gr.Column(scale=2):
-            input_content = gr.Code(label="Nội dung Template", language="text", lines=25)
+            input_content = gr.Code(label="Nội dung Template", language="markdown", lines=25)
             
             gr.Markdown(
                 "### 📌 Biến có thể sử dụng trong Template:\n"

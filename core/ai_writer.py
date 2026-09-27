@@ -52,9 +52,13 @@ def _get_client() -> genai.Client:
 
 VARIATION_ANGLES = [
     "Nhấn mạnh vào hiệu năng vận hành thực tế, công suất tải và khả năng làm việc liên tục.",
-    "Nhấn mạnh vào độ an toàn kỹ thuật, hệ thống phanh tự động và độ tin cậy cơ khí.",
+    "Nhấn mạnh vào độ an toàn kỹ thuật, hệ thống ngắt tự động và độ tin cậy cơ khí.",
     "Nhấn mạnh vào ứng dụng đa ngành trong công xưởng, kho bãi và bài toán tối ưu chi phí.",
-    "Nhấn mạnh vào chất lượng vật liệu gia công, độ bền cáp/xích và hướng dẫn kỹ thuật chuẩn.",
+    "Nhấn mạnh vào chất lượng vật liệu gia công, độ bền chi tiết và hướng dẫn kỹ thuật chuẩn.",
+    "Nhấn mạnh vào tính tiện dụng khi lắp đặt, bảo dưỡng định kỳ và tuổi thọ sử dụng lâu dài.",
+    "Nhấn mạnh vào khả năng tiết kiệm điện năng, tối ưu hóa không gian và vận hành êm ái.",
+    "Nhấn mạnh vào tiêu chuẩn chứng nhận chất lượng, chế độ bảo hành và nguồn gốc sản phẩm.",
+    "Nhấn mạnh vào trải nghiệm thực tế của người dùng, phân tích ưu/nhược điểm khách quan.",
 ]
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=30), reraise=True)
@@ -127,13 +131,18 @@ def write_post(
     else:
         prompt_template = PROMPT_PATH.read_text(encoding="utf-8")
 
+    # Bảo vệ các dấu ngoặc nhọn đơn lẻ trong dữ liệu đầu vào tránh lỗi .format()
+    safe_ref_text = ref_text.replace("{", "{{").replace("}", "}}")
+    safe_user_notes = (user_notes.strip() if user_notes and user_notes.strip() else "(Không có yêu cầu riêng)")
+    safe_user_notes = safe_user_notes.replace("{", "{{").replace("}", "}}") + variation_instruction
+
     # Điền thông tin vào template
     prompt = prompt_template.format(
         product_name=product_name,
         site_name=site_name,
-        reference_articles=ref_text,
+        reference_articles=safe_ref_text,
         image_count=image_count,
-        user_notes=(user_notes.strip() if user_notes and user_notes.strip() else "(Không có yêu cầu riêng)") + variation_instruction,
+        user_notes=safe_user_notes,
     )
 
     logger.info(f"Đang gọi Gemini ({settings.GEMINI_MODEL}) để viết bài về '{product_name}' cho site '{site_name}' (var={variation_index}/{total_variations})...")

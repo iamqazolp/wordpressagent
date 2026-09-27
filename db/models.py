@@ -51,3 +51,23 @@ class PromptTemplate(Base):
     is_default = Column(Boolean, default=False)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class ScheduledPost(Base):
+    __tablename__ = "scheduled_posts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    product_name = Column(String(300), nullable=False)
+    article_data_json = Column(Text, nullable=False)      # JSON {site_name: {title, raw_html, short_description}}
+    site_names_json = Column(Text, nullable=False)        # JSON ["site1", "site2"]
+    post_type = Column(String(50), default="product")     # product or post
+    post_status = Column(String(20), default="draft")     # draft or publish
+    regular_price = Column(String(50), default="")
+    sale_price = Column(String(50), default="")
+    image_paths_json = Column(Text, default="[]")         # JSON list of image paths
+    scheduled_time = Column(DateTime, nullable=False)     # When to run
+    status = Column(String(20), default="pending")        # pending, running, completed, failed, cancelled
+    result_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=func.now())
+    executed_at = Column(DateTime, nullable=True)
+

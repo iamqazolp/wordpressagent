@@ -171,6 +171,78 @@ def publish_to_sites_ui(articles_state, image_files, post_status, post_type, reg
         db.close()
 
 
+def schedule_post_ui(
+    articles_state,
+    image_files,
+    post_status,
+    post_type,
+    regular_price="",
+    sale_price="",
+    delay_type="Sau số phút",
+    delay_value="30",
+) -> str:
+    """Lên lịch đăng bài tự động qua APScheduler."""
+    if not articles_state:
+        return "❌ Chưa có nội dung bài viết nào để lên lịch! Hãy tạo bài viết trước."
+
+    from datetime import datetime, timedelta
+    from core.scheduler import schedule_publish_job
+
+    now = datetime.now()
+    val_str = str(delay_value).strip()
+
+    try:
+        if "phút" in delay_type.lower():
+            minutes = int(val_str) if val_str else 30
+            if minutes < 1:
+                return "❌ Số phút hẹn phải lớn hơn hoặc bằng 1."
+            target_time = now + timedelta(minutes=minutes)
+        elif "giờ" in delay_type.lower():
+            hours = float(val_str) if val_str else 1.0
+            if hours <= 0:
+                return "❌ Số giờ hẹn phải lớn hơn 0."
+            target_time = now + timedelta(hours=hours)
+        else:
+            # Parse datetime string
+            target_time = datetime.strptime(val_str, "%Y-%m-%d %H:%M")
+            if target_time <= now:
+                return f"❌ Thời gian hẹn ({val_str}) phải ở trong tương lai (sau hiện tại: {now.strftime('%Y-%m-%d %H:%M')})."
+    except Exception as e:
+        return f"❌ Định dạng thời gian hẹn không hợp lệ: {e}. Ví dụ: '30' (phút), hoặc '2026-09-27 15:30'"
+
+    image_paths = _extract_file_paths(image_files)
+    first_site = list(articles_state.keys())[0]
+    prod_name = articles_state[first_site].get("product_name") or articles_state[first_site].get("title", "Sản phẩm")
+
+    try:
+        job_id = schedule_publish_job(
+            product_name=prod_name,
+            articles=articles_state,
+            site_names=list(articles_state.keys()),
+            scheduled_time=target_time,
+            post_type=post_type,
+            post_status=post_status,
+            regular_price=regular_price,
+            sale_price=sale_price,
+            image_files=image_paths,
+        )
+
+        sites_count = len(articles_state)
+        return (
+            f"### ⏰ Đặt Lịch Đăng Thành Công!\n"
+            f"- **Mã lịch hẹn (Job ID):** `#{job_id}`\n"
+            f"- **Sản phẩm:** {prod_name}\n"
+            f"- **Thời gian đăng dự kiến:** `{target_time.strftime('%d/%m/%Y %H:%M')}`\n"
+            f"- **Áp dụng cho:** {sites_count} website ({', '.join(articles_state.keys())})\n"
+            f"- **Trạng thái:** Sẽ tự động đăng dưới dạng `{post_status}`\n\n"
+            f"👉 *Bạn có thể theo dõi tiến độ hoặc hủy lịch bất kỳ lúc nào tại tab **📅 Lịch Đăng Bài**.*"
+        )
+    except Exception as e:
+        logger.exception("Lỗi khi lên lịch đăng bài")
+        return f"❌ Có lỗi xảy ra khi lên lịch đăng: {str(e)}"
+
+
+
 def on_change_preview_site(selected_site, articles_state, edit_mode_active):
     """Khi đổi dropdown xem trước của site nào."""
     if not articles_state or selected_site not in articles_state:
@@ -268,9 +340,9 @@ def build_tab_create(db_session=None) -> dict:
                 lines=2,
             )
             user_notes_input = gr.Textbox(
-                label="💡 Gợi ý / Yêu cầu riêng cho AI (Tùy chọn)",
-                placeholder="VD: Nhấn mạnh lõi đồng 100%, bảo hành 24 tháng, tặng kèm móc phụ...",
-                lines=2,
+                label="💡 Mô tả / Thông số kỹ thuật / Gợi ý riêng cho AI (Tùy chọn)",
+                placeholder="VD: Dán thông số kỹ thuật, mô tả chi tiết từ nhà cung cấp, hoặc ghi chú riêng (lõi đồng 100%, bảo hành 24 tháng...)",
+                lines=3,
             )
             
             template_selector = gr.Dropdown(
@@ -356,6 +428,22 @@ def build_tab_create(db_session=None) -> dict:
 
     publish_result = gr.Markdown()
 
+    with gr.Accordion("⏰ Lên lịch hẹn giờ đăng tự động (Post Scheduler)", open=False):
+        gr.Markdown("Hẹn giờ đăng bài tự động mà không cần treo máy hoặc đăng ngay lập tức. Hệ thống sẽ tự động đăng vào thời điểm được chỉ định.")
+        with gr.Row():
+            schedule_type = gr.Radio(
+                label="Kiểu hẹn giờ",
+                choices=["Sau số phút", "Sau số giờ", "Thời gian cụ thể (YYYY-MM-DD HH:MM)"],
+                value="Sau số phút",
+            )
+            schedule_val = gr.Textbox(
+                label="Giá trị thời gian",
+                value="30",
+                placeholder="VD: 30 (phút), hoặc 2 (giờ), hoặc 2026-09-27 16:00",
+            )
+        schedule_btn = gr.Button("⏰ Xác nhận Lên Lịch Đăng", variant="primary", size="lg")
+        schedule_result = gr.Markdown()
+
     return {
         'product_input': product_input,
         'image_input': image_input,
@@ -380,4 +468,9 @@ def build_tab_create(db_session=None) -> dict:
         'post_status_selector': post_status_selector,
         'publish_btn': publish_btn,
         'publish_result': publish_result,
+        'schedule_type': schedule_type,
+        'schedule_val': schedule_val,
+        'schedule_btn': schedule_btn,
+        'schedule_result': schedule_result,
     }
+

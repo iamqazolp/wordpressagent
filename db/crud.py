@@ -9,7 +9,7 @@ from cryptography.fernet import Fernet
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from db.models import Site, PostHistory, PromptTemplate
+from db.models import Site, PostHistory, PromptTemplate, ScheduledPost
 
 from dotenv import load_dotenv
 
@@ -382,21 +382,135 @@ def delete_template(db: Session, template_id: int) -> bool:
 
 def seed_default_templates(db: Session) -> None:
     try:
-        count = db.query(PromptTemplate).count()
-        if count == 0:
-            prompts_path = Path(__file__).parent.parent / "prompts" / "write_post.txt"
-            content = "Default template content"
-            if prompts_path.exists():
-                with open(prompts_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-            
-            create_template(
-                db,
-                name="Thiết bị Công nghiệp (Mặc định)",
-                content=content,
-                category="industrial",
-                is_default=True
-            )
-            logger.info("Đã tạo template mặc định.")
+        defaults = [
+            {
+                "name": "Thiết bị Công nghiệp (Mặc định)",
+                "category": "industrial",
+                "is_default": True,
+                "file": Path(__file__).parent.parent / "prompts" / "write_post.txt",
+                "fallback": "Default industrial prompt template",
+            },
+            {
+                "name": "Điện tử & Công nghệ",
+                "category": "electronics",
+                "is_default": False,
+                "file": Path(__file__).parent.parent / "config" / "defaults" / "templates" / "electronics.txt",
+                "fallback": "Default electronics prompt template",
+            },
+            {
+                "name": "Sản phẩm Đa dụng",
+                "category": "general",
+                "is_default": False,
+                "file": Path(__file__).parent.parent / "config" / "defaults" / "templates" / "general.txt",
+                "fallback": "Default general prompt template",
+            },
+            {
+                "name": "Thời trang & Phụ kiện",
+                "category": "fashion",
+                "is_default": False,
+                "file": Path(__file__).parent.parent / "config" / "defaults" / "templates" / "fashion.txt",
+                "fallback": "Default fashion prompt template",
+            },
+        ]
+
+        for item in defaults:
+            existing = db.query(PromptTemplate).filter(PromptTemplate.name == item["name"]).first()
+            if not existing:
+                content = item["fallback"]
+                if item["file"].exists():
+                    with open(item["file"], "r", encoding="utf-8") as f:
+                        content = f.read()
+
+                create_template(
+                    db,
+                    name=item["name"],
+                    content=content,
+                    category=item["category"],
+                    is_default=item["is_default"],
+                )
+                logger.info(f"Đã tạo template mặc định: {item['name']}")
     except Exception as e:
         logger.error(f"Lỗi khi seed default templates: {e}")
+
+
+# --- Scheduled Posts CRUD ---
+
+def create_scheduled_post(
+    db: Session,
+    product_name: str,
+    article_data_json: str,
+    site_names_json: str,
+    scheduled_time,
+    post_type: str = "product",
+    post_status: str = "draft",
+    regular_price: str = "",
+    sale_price: str = "",
+    image_paths_json: str = "[]",
+) -> ScheduledPost | None:
+    try:
+        job = ScheduledPost(
+            product_name=product_name,
+            article_data_json=article_data_json,
+            site_names_json=site_names_json,
+            scheduled_time=scheduled_time,
+            post_type=post_type,
+            post_status=post_status,
+            regular_price=regular_price,
+            sale_price=sale_price,
+            image_paths_json=image_paths_json,
+            status="pending",
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        return job
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Lỗi khi tạo scheduled post: {e}")
+        return None
+
+def get_scheduled_posts(db: Session, status: str = None, limit: int = 100) -> list[ScheduledPost]:
+    try:
+        query = db.query(ScheduledPost)
+        if status:
+            query = query.filter(ScheduledPost.status == status)
+        return query.order_by(desc(ScheduledPost.created_at)).limit(limit).all()
+    except Exception as e:
+        logger.error(f"Lỗi khi lấy scheduled posts: {e}")
+        return []
+
+def get_scheduled_post(db: Session, job_id: int) -> ScheduledPost | None:
+    try:
+        return db.query(ScheduledPost).filter(ScheduledPost.id == job_id).first()
+    except Exception as e:
+        logger.error(f"Lỗi khi lấy scheduled post #{job_id}: {e}")
+        return None
+
+def update_scheduled_post(db: Session, job_id: int, **kwargs) -> ScheduledPost | None:
+    try:
+        job = get_scheduled_post(db, job_id)
+        if not job:
+            return None
+        for key, value in kwargs.items():
+            setattr(job, key, value)
+        db.commit()
+        db.refresh(job)
+        return job
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Lỗi khi cập nhật scheduled post #{job_id}: {e}")
+        return None
+
+def delete_scheduled_post(db: Session, job_id: int) -> bool:
+    try:
+        job = get_scheduled_post(db, job_id)
+        if job:
+            db.delete(job)
+            db.commit()
+            return True
+        return False
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Lỗi khi xóa scheduled post #{job_id}: {e}")
+        return False
+

@@ -64,7 +64,7 @@ def _call_gemini(client, model, prompt, temperature):
         contents=prompt,
         config=types.GenerateContentConfig(
             temperature=temperature,
-            max_output_tokens=3000,
+            max_output_tokens=8192,
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         ),
     )

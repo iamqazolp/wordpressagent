@@ -9,11 +9,9 @@ from bs4 import BeautifulSoup
 import re
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from tenacity import retry, stop_after_attempt, wait_fixed
+from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception
 
 logger = logging.getLogger(__name__)
-
-from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception
 
 # Timeout tối đa khi tải trang (giây) - giảm xuống để không làm đơ pipeline
 REQUEST_TIMEOUT = 7
@@ -109,6 +107,27 @@ def scrape_article(url: str) -> str:
         text = element.get_text(separator=" ", strip=True)
         if text and len(text) > 20:  # Bỏ qua dòng quá ngắn (thường là label, nút bấm)
             lines.append(text)
+
+    # Trích xuất bảng thông số kỹ thuật (table) — rất quan trọng cho sản phẩm công nghiệp
+    for table in main_content.find_all("table"):
+        rows = []
+        for tr in table.find_all("tr"):
+            cells = [td.get_text(separator=" ", strip=True) for td in tr.find_all(["th", "td"])]
+            if cells:
+                rows.append(" | ".join(cells))
+        if rows:
+            lines.append("Bảng thông số:\n" + "\n".join(rows))
+
+    # Trích xuất definition list (dl/dt/dd) — nhiều trang dùng thay cho table
+    for dl in main_content.find_all("dl"):
+        items = []
+        for dt, dd in zip(dl.find_all("dt"), dl.find_all("dd")):
+            dt_text = dt.get_text(strip=True)
+            dd_text = dd.get_text(strip=True)
+            if dt_text and dd_text:
+                items.append(f"{dt_text}: {dd_text}")
+        if items:
+            lines.append("\n".join(items))
 
     content = "\n\n".join(lines)
 

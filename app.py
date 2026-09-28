@@ -83,7 +83,7 @@ def main():
         server_port=port,
         share=False,
         inbrowser=True,
-        theme=gr.themes.Soft(primary_hue="blue"),
+        theme=gr.themes.Soft(primary_hue="blue"),                                                                                                                                              
     )
 
 

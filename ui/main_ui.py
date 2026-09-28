@@ -258,13 +258,17 @@ def create_app() -> gr.Blocks:
 
         def _sync_sites_on_save(name, url, key, secret, user, pwd, current_sel):
             status_msg, table_md, edit_dd, create_cb = handle_save_site(name, url, key, secret, user, pwd, current_sel)
-            # create_cb có chứa choices mới
-            bulk_cb = gr.CheckboxGroup(choices=create_cb.choices, value=create_cb.value)
+            # gr.update() trả về dict, không phải component → dùng dict access
+            cb_choices = create_cb.get("choices", []) if isinstance(create_cb, dict) else []
+            cb_value = create_cb.get("value", []) if isinstance(create_cb, dict) else []
+            bulk_cb = gr.update(choices=cb_choices, value=cb_value)
             return status_msg, table_md, edit_dd, create_cb, bulk_cb
 
         def _sync_sites_on_delete(current_sel):
             status_msg, table_md, edit_dd, create_cb = handle_delete_site(current_sel)
-            bulk_cb = gr.CheckboxGroup(choices=create_cb.choices, value=create_cb.value)
+            cb_choices = create_cb.get("choices", []) if isinstance(create_cb, dict) else []
+            cb_value = create_cb.get("value", []) if isinstance(create_cb, dict) else []
+            bulk_cb = gr.update(choices=cb_choices, value=cb_value)
             return status_msg, table_md, edit_dd, create_cb, bulk_cb
 
         sites_comps['btn_save_site'].click(

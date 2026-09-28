@@ -14,6 +14,21 @@ from core import wp_client, pipeline
 logger = logging.getLogger(__name__)
 
 
+def _extract_file_paths(files) -> list[str]:
+    """Trích xuất danh sách đường dẫn file an toàn từ Gradio input."""
+    if not files:
+        return []
+    paths = []
+    for f in files:
+        if isinstance(f, str):
+            paths.append(f)
+        elif hasattr(f, "name"):
+            paths.append(f.name)
+        else:
+            paths.append(str(f))
+    return paths
+
+
 def _extract_id_from_choice(choice_str: str) -> int | None:
     """Trích xuất ID từ chuỗi hiển thị '#12 - Tên sản phẩm...'"""
     if not choice_str or not choice_str.startswith("#"):
@@ -61,6 +76,15 @@ def fetch_history_data(site_filter: str = "Tất cả", status_filter: str = "T�
                 elif status_filter == "❌ Lỗi" and h.status != "failed":
                     continue
 
+            # Đếm số lượng ảnh
+            img_count = 0
+            if h.image_paths_json:
+                try:
+                    imgs = json.loads(h.image_paths_json)
+                    img_count = len(imgs) if isinstance(imgs, list) else 0
+                except Exception:
+                    pass
+
             date_str = h.created_at.strftime("%Y-%m-%d %H:%M") if h.created_at else ""
 
             data.append({
@@ -70,13 +94,14 @@ def fetch_history_data(site_filter: str = "Tất cả", status_filter: str = "T�
                 "Website": site_name,
                 "Loại": "WooCommerce" if h.post_type == "product" else "Blog",
                 "Trạng thái": status_lbl,
+                "Ảnh": f"{img_count} ảnh" if img_count > 0 else "-",
                 "Giá gốc": h.regular_price or "-",
                 "Ngày tạo": date_str,
                 "Link WP": h.wp_post_url or "",
             })
 
         if not data:
-            return pd.DataFrame(columns=["ID", "Sản phẩm", "Tiêu đề", "Website", "Loại", "Trạng thái", "Giá gốc", "Ngày tạo", "Link WP"])
+            return pd.DataFrame(columns=["ID", "Sản phẩm", "Tiêu đề", "Website", "Loại", "Trạng thái", "Ảnh", "Giá gốc", "Ngày tạo", "Link WP"])
 
         return pd.DataFrame(data)
     except Exception as e:
@@ -116,24 +141,35 @@ def get_history_post_choices(site_filter: str = "Tất cả", status_filter: str
 
 
 def on_select_history_post(choice_str: str) -> tuple:
-    """Tải thông tin chi tiết của bài viết được chọn."""
+    """Tải thông tin chi tiết và hình ảnh của bài viết được chọn."""
     post_id = _extract_id_from_choice(choice_str)
     if not post_id:
-        return "", "", "", "", "Sản phẩm WooCommerce", "draft", "", "", "*(Chưa chọn bài viết)*"
+        return "", "", "", "", "Sản phẩm WooCommerce", "draft", "", "", "*(Chưa chọn bài viết)*", None, None
 
     db = SessionLocal()
     try:
         h = crud.get_post_history_by_id(db, post_id)
         if not h:
-            return "", "", "", "", "Sản phẩm WooCommerce", "draft", "", "", "❌ Không tìm thấy bài viết!"
+            return "", "", "", "", "Sản phẩm WooCommerce", "draft", "", "", "❌ Không tìm thấy bài viết!", None, None
 
         site_name = h.site.name if h.site else "Unknown"
         post_type_label = "Sản phẩm WooCommerce" if h.post_type == "product" else "Bài viết Blog"
+
+        # Lấy danh sách ảnh hiện có trên ổ đĩa
+        image_paths = []
+        if h.image_paths_json:
+            try:
+                image_paths = json.loads(h.image_paths_json)
+            except Exception:
+                pass
+
+        existing_images = [p for p in image_paths if Path(p).exists()]
         
         info_lines = [
             f"### 📄 Bài viết #{h.id}: **{h.product_name}**",
             f"- **Website đích:** `{site_name}` ({h.site.url if h.site else ''})",
             f"- **Trạng thái:** `{'💾 Đã lưu nháp trên Web' if h.status == 'saved' else ('✅ Đã đăng lên Website' if h.status == 'published' else h.status)}`",
+            f"- **Số lượng ảnh đính kèm:** {len(existing_images)} ảnh",
             f"- **Ngày lưu:** {h.created_at.strftime('%Y-%m-%d %H:%M') if h.created_at else ''}",
         ]
         if h.wp_post_url:
@@ -143,15 +179,7 @@ def on_select_history_post(choice_str: str) -> tuple:
 
         info_md = "\n".join(info_lines)
 
-        # Image preview
-        image_paths = []
-        if h.image_paths_json:
-            try:
-                image_paths = json.loads(h.image_paths_json)
-            except Exception:
-                pass
-        
-        preview_html = pipeline.make_preview_html(h.raw_html, image_paths)
+        preview_html = pipeline.make_preview_html(h.raw_html, existing_images)
 
         return (
             h.title or "",
@@ -163,6 +191,8 @@ def on_select_history_post(choice_str: str) -> tuple:
             preview_html,
             h.raw_html or "",
             info_md,
+            existing_images if existing_images else None,
+            None,
         )
     finally:
         db.close()
@@ -175,40 +205,51 @@ def on_save_history_edits(
     reg_price: str,
     sale_price: str,
     raw_html: str,
+    new_images_input=None,
 ) -> tuple:
-    """Lưu các thay đổi nội dung của bài viết vào database."""
+    """Lưu các thay đổi nội dung và hình ảnh của bài viết vào database."""
     post_id = _extract_id_from_choice(choice_str)
     if not post_id:
-        return "❌ Vui lòng chọn một bài viết để lưu!", gr.update()
+        return "❌ Vui lòng chọn một bài viết để lưu!", gr.update(), gr.update()
 
     db = SessionLocal()
     try:
         h = crud.get_post_history_by_id(db, post_id)
         if not h:
-            return "❌ Không tìm thấy bài viết để cập nhật!", gr.update()
+            return "❌ Không tìm thấy bài viết để cập nhật!", gr.update(), gr.update()
 
         h.title = title.strip()
         h.short_description = short_desc.strip()
         h.regular_price = reg_price.strip()
         h.sale_price = sale_price.strip()
         h.raw_html = raw_html.strip()
+
+        # Kiểm tra nếu người dùng tải lên danh sách ảnh mới
+        new_paths = _extract_file_paths(new_images_input)
+        if new_paths:
+            h.image_paths_json = json.dumps(new_paths, ensure_ascii=False)
+            current_images = new_paths
+        else:
+            try:
+                current_images = json.loads(h.image_paths_json) if h.image_paths_json else []
+            except Exception:
+                current_images = []
+
         db.commit()
 
-        # Update preview
-        image_paths = []
-        if h.image_paths_json:
-            try:
-                image_paths = json.loads(h.image_paths_json)
-            except Exception:
-                pass
-        updated_preview = pipeline.make_preview_html(h.raw_html, image_paths)
+        existing_images = [p for p in current_images if Path(p).exists()]
+        updated_preview = pipeline.make_preview_html(h.raw_html, existing_images)
 
         gr.Info(f"✅ Đã lưu cập nhật cho bài #{h.id}!")
-        return f"✅ **Đã lưu cập nhật thành công cho bài #{h.id} ({h.product_name})!**", updated_preview
+        return (
+            f"✅ **Đã lưu cập nhật thành công cho bài #{h.id} ({h.product_name})!** (Hình ảnh: {len(existing_images)} ảnh)",
+            updated_preview,
+            existing_images if existing_images else None,
+        )
     except Exception as e:
         db.rollback()
         logger.exception("Lỗi khi lưu bài viết đã chọn")
-        return f"❌ Lỗi khi lưu: {str(e)}", gr.update()
+        return f"❌ Lỗi khi lưu: {str(e)}", gr.update(), gr.update()
     finally:
         db.close()
 
@@ -222,39 +263,48 @@ def on_publish_history_post(
     raw_html: str,
     post_type: str,
     post_status: str,
+    new_images_input=None,
 ) -> tuple:
-    """Đăng ngay bài viết đã lưu lên WordPress/WooCommerce."""
+    """Đăng ngay bài viết đã lưu kèm hình ảnh lên WordPress/WooCommerce."""
     post_id = _extract_id_from_choice(choice_str)
     if not post_id:
-        return "❌ Vui lòng chọn một bài viết để đăng!", gr.update(), gr.update()
+        return "❌ Vui lòng chọn một bài viết để đăng!", gr.update(), gr.update(), gr.update()
 
     db = SessionLocal()
     try:
         h = crud.get_post_history_by_id(db, post_id)
         if not h or not h.site:
-            return "❌ Không tìm thấy bài viết hoặc website cấu hình!", gr.update(), gr.update()
+            return "❌ Không tìm thấy bài viết hoặc website cấu hình!", gr.update(), gr.update(), gr.update()
 
         site_config = crud.get_site_config(db, h.site_id)
         if not site_config:
-            return "❌ Không tìm thấy thông tin xác thực của website!", gr.update(), gr.update()
+            return "❌ Không tìm thấy thông tin xác thực của website!", gr.update(), gr.update(), gr.update()
 
-        # Upload ảnh nếu có
-        image_paths = []
-        if h.image_paths_json:
+        # Xác định hình ảnh đăng bài: ưu tiên ảnh mới upload, nếu không thì lấy ảnh đã lưu
+        new_paths = _extract_file_paths(new_images_input)
+        if new_paths:
+            image_paths = new_paths
+            h.image_paths_json = json.dumps(new_paths, ensure_ascii=False)
+        else:
             try:
-                image_paths = json.loads(h.image_paths_json)
+                image_paths = json.loads(h.image_paths_json) if h.image_paths_json else []
             except Exception:
-                pass
+                image_paths = []
 
+        valid_image_paths = [p for p in image_paths if Path(p).exists()]
+
+        # Tải ảnh lên WordPress Media Library
         uploaded_images = []
         image_warning = None
-        if image_paths and site_config.get("wp_user") and site_config.get("wp_app_password"):
+        if valid_image_paths and site_config.get("wp_user") and site_config.get("wp_app_password"):
             try:
-                uploaded_images = wp_client.upload_images(image_paths, site_config)
+                uploaded_images = wp_client.upload_images(valid_image_paths, site_config)
             except Exception as e:
                 image_warning = str(e)
+        elif valid_image_paths and not (site_config.get("wp_user") and site_config.get("wp_app_password")):
+            image_warning = "Chưa cấu hình WordPress Application Password ở tab Quản Lý Website nên chưa tải được ảnh lên WordPress."
 
-        # Đăng bài
+        # Xuất bản bài viết hoặc sản phẩm
         is_product = "product" in post_type.lower() or "sản phẩm" in post_type.lower()
         if is_product:
             res = wp_client.publish_product(
@@ -276,7 +326,7 @@ def on_publish_history_post(
                 status=post_status,
             )
 
-        # Cập nhật CSDL
+        # Cập nhật thông tin vào CSDL
         h.title = title.strip()
         h.raw_html = raw_html
         h.short_description = short_desc.strip()
@@ -293,6 +343,7 @@ def on_publish_history_post(
         result_msg = (
             f"### 🎉 Đăng thành công lên {h.site.name}!\n\n"
             f"- **Trạng thái:** {status_badge}\n"
+            f"- **Hình ảnh tải lên WP:** {len(uploaded_images)}/{len(valid_image_paths)} ảnh\n"
             f"- **Link xem:** [{res.get('post_url')}]({res.get('post_url')})\n"
             f"- **Link sửa WP:** [Chỉnh sửa sản phẩm]({res.get('edit_url')})\n"
         )
@@ -302,11 +353,11 @@ def on_publish_history_post(
         gr.Info(f"🎉 Đã đăng thành công lên {h.site.name}!")
         updated_table = fetch_history_data()
         updated_choices = get_history_post_choices()
-        return result_msg, updated_table, gr.update(choices=updated_choices)
+        return result_msg, updated_table, gr.update(choices=updated_choices), valid_image_paths if valid_image_paths else None
 
     except Exception as e:
         logger.exception("Lỗi khi đăng bài đã lưu")
-        return f"❌ Đăng thất bại: {str(e)}", gr.update(), gr.update()
+        return f"❌ Đăng thất bại: {str(e)}", gr.update(), gr.update(), gr.update()
     finally:
         db.close()
 
@@ -315,7 +366,7 @@ def on_delete_history_post(choice_str: str) -> tuple:
     """Xóa bài viết khỏi CSDL."""
     post_id = _extract_id_from_choice(choice_str)
     if not post_id:
-        return "❌ Vui lòng chọn bài viết cần xóa!", gr.update(), gr.update()
+        return "❌ Vui lòng chọn bài viết cần xóa!", gr.update(), gr.update(), None
 
     db = SessionLocal()
     try:
@@ -328,7 +379,7 @@ def on_delete_history_post(choice_str: str) -> tuple:
         
         updated_table = fetch_history_data()
         updated_choices = get_history_post_choices()
-        return msg, updated_table, gr.update(choices=updated_choices, value=updated_choices[0] if updated_choices else None)
+        return msg, updated_table, gr.update(choices=updated_choices, value=updated_choices[0] if updated_choices else None), None
     finally:
         db.close()
 
@@ -350,7 +401,7 @@ def build_tab_history(db_session=None) -> dict:
     gr.Markdown("""
     <div style="margin-bottom: 15px;">
         <h3>📚 Kho Bài Viết & Lịch Sử Đăng</h3>
-        <p style="color: #666;">Quản lý toàn bộ bài viết đã lưu trên web và lịch sử đăng lên WordPress/WooCommerce. Bạn có thể xem lại, chỉnh sửa hoặc đăng bất kỳ bài nào bất cứ lúc nào.</p>
+        <p style="color: #666;">Quản lý toàn bộ bài viết đã lưu trên web và lịch sử đăng lên WordPress/WooCommerce. Bạn có thể xem lại hình ảnh, chỉnh sửa hoặc đăng bất kỳ bài nào bất cứ lúc nào.</p>
     </div>
     """)
 
@@ -371,13 +422,13 @@ def build_tab_history(db_session=None) -> dict:
 
     history_table = gr.Dataframe(
         value=fetch_history_data("Tất cả", "Tất cả"),
-        headers=["ID", "Sản phẩm", "Tiêu đề", "Website", "Loại", "Trạng thái", "Giá gốc", "Ngày tạo", "Link WP"],
+        headers=["ID", "Sản phẩm", "Tiêu đề", "Website", "Loại", "Trạng thái", "Ảnh", "Giá gốc", "Ngày tạo", "Link WP"],
         interactive=False,
         wrap=True,
     )
 
     gr.Markdown("---")
-    gr.Markdown("### 🔍 Chi Tiết & Thao Tác Với Bài Viết")
+    gr.Markdown("### 🔍 Chi Tiết & Thao Tác Với Bài Viết Đã Lưu")
 
     with gr.Row():
         post_selector = gr.Dropdown(
@@ -397,6 +448,22 @@ def build_tab_history(db_session=None) -> dict:
             with gr.Row():
                 reg_price_input = gr.Textbox(label="💵 Giá gốc (VNĐ)", lines=1, interactive=True)
                 sale_price_input = gr.Textbox(label="🏷️ Giá KM (VNĐ)", lines=1, interactive=True)
+
+            # Phần hình ảnh của bài viết
+            gr.Markdown("#### 🖼️ Quản Lý Hình Ảnh Sản Phẩm")
+            images_gallery = gr.Gallery(
+                label="Album ảnh hiện có của bài viết",
+                columns=4,
+                rows=1,
+                height=150,
+                object_fit="contain",
+            )
+            images_upload = gr.File(
+                label="📁 Tải thêm hoặc cập nhật ảnh mới cho bài viết",
+                file_count="multiple",
+                file_types=["image"],
+                interactive=True,
+            )
 
             with gr.Row():
                 post_type_selector = gr.Radio(
@@ -461,6 +528,8 @@ def build_tab_history(db_session=None) -> dict:
             preview_output,
             html_editor,
             post_info_box,
+            images_gallery,
+            images_upload,
         ],
     )
 
@@ -480,8 +549,8 @@ def build_tab_history(db_session=None) -> dict:
 
     save_edits_btn.click(
         fn=on_save_history_edits,
-        inputs=[post_selector, title_input, short_desc_input, reg_price_input, sale_price_input, html_editor],
-        outputs=[action_result_box, preview_output],
+        inputs=[post_selector, title_input, short_desc_input, reg_price_input, sale_price_input, html_editor, images_upload],
+        outputs=[action_result_box, preview_output, images_gallery],
     ).then(
         fn=_on_filter_change,
         inputs=[site_filter, status_filter],
@@ -499,15 +568,16 @@ def build_tab_history(db_session=None) -> dict:
             html_editor,
             post_type_selector,
             post_status_selector,
+            images_upload,
         ],
-        outputs=[action_result_box, history_table, post_selector],
+        outputs=[action_result_box, history_table, post_selector, images_gallery],
         show_progress=True,
     )
 
     delete_btn.click(
         fn=on_delete_history_post,
         inputs=[post_selector],
-        outputs=[action_result_box, history_table, post_selector],
+        outputs=[action_result_box, history_table, post_selector, images_gallery],
     )
 
     return {
@@ -520,6 +590,8 @@ def build_tab_history(db_session=None) -> dict:
         "short_desc_input": short_desc_input,
         "reg_price_input": reg_price_input,
         "sale_price_input": sale_price_input,
+        "images_gallery": images_gallery,
+        "images_upload": images_upload,
         "post_type_selector": post_type_selector,
         "post_status_selector": post_status_selector,
         "save_edits_btn": save_edits_btn,

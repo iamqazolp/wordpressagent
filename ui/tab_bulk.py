@@ -216,11 +216,31 @@ def run_bulk_generate(
                 template_content=template_content,
             )
 
-            # Trích xuất mô tả ngắn tự động
-            for s_name, art in articles.items():
-                art["product_name"] = p_name
-                tbl_match = re.search(r"(<table\b.*?>.*?</table>)", art.get("raw_html", ""), re.DOTALL | re.IGNORECASE)
-                art["short_description"] = tbl_match.group(1) if tbl_match else ""
+            # Trích xuất mô tả ngắn tự động & lưu vào CSDL
+            db_save = SessionLocal()
+            try:
+                for s_name, art in articles.items():
+                    art["product_name"] = p_name
+                    tbl_match = re.search(r"(<table\b.*?>.*?</table>)", art.get("raw_html", ""), re.DOTALL | re.IGNORECASE)
+                    art["short_description"] = tbl_match.group(1) if tbl_match else ""
+                    
+                    site = crud.get_site_by_name(db_save, s_name)
+                    if site:
+                        crud.create_post_history(
+                            db_save,
+                            site_id=site.id,
+                            product_name=p_name,
+                            title=art.get("title", ""),
+                            raw_html=art.get("raw_html", ""),
+                            post_type="product",
+                            status="saved",
+                            short_description=art.get("short_description", ""),
+                            regular_price=prod.get("regular_price", ""),
+                            sale_price=prod.get("sale_price", ""),
+                            image_paths_json="[]",
+                        )
+            finally:
+                db_save.close()
 
             results_state.append({
                 "product_name": p_name,
@@ -230,7 +250,7 @@ def run_bulk_generate(
                 "status": "success",
             })
             for s_name in selected_sites:
-                rows.append([len(rows) + 1, p_name, "✅ Đã tạo bài", s_name, "-", ""])
+                rows.append([len(rows) + 1, p_name, "💾 Đã lưu nháp trên Web", s_name, "-", "Đã lưu vào Kho Bài Viết"])
         except Exception as e:
             logger.exception(f"Lỗi khi tạo bài hàng loạt cho {p_name}")
             results_state.append({
@@ -244,7 +264,11 @@ def run_bulk_generate(
             rows.append([len(rows) + 1, p_name, "❌ Lỗi tạo bài", "-", "-", str(e)])
 
     df_res = pd.DataFrame(rows, columns=["STT", "Tên sản phẩm", "Trạng thái", "Website", "Link WP", "Chi tiết / Lỗi"])
-    msg = f"✅ Hoàn tất tạo bài cho {total} sản phẩm! Tổng cộng {len(results_state)} kết quả."
+    msg = (
+        f"### 💾 Hoàn tất tạo và lưu nháp bài viết cho {total} sản phẩm vào hệ thống!\n\n"
+        f"- Toàn bộ nội dung đã được lưu an toàn trong cơ sở dữ liệu.\n"
+        f"- Bạn có thể qua tab **📚 Kho Bài Viết & Lịch Sử** để kiểm tra từng bài và bấm đăng lên WooCommerce khi sẵn sàng."
+    )
     return results_state, df_res, msg
 
 

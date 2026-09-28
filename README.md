@@ -86,7 +86,9 @@ python app.py
    - Dùng ô chọn website để kiểm tra nội dung và tiêu đề bài viết tạo cho từng trang.
    - Chỉnh sửa nhanh tiêu đề ngay trên ô text.
    - Bấm **"🔄 Chuyển đổi chế độ (Xem / Chỉnh sửa HTML)"** để mở trình sửa mã HTML trực tiếp, sau đó bấm **"💾 Lưu mã HTML đã sửa"**.
-7. **Đăng bài:** Chọn hình thức đăng (*Sản phẩm WooCommerce* hoặc *Bài viết Blog*) rồi nhấn **"📤 Đăng lên tất cả website đã chọn"**.
+8. **Lưu trữ hoặc Đăng bài:**
+   - **Tùy chọn A - Lưu nháp trên hệ thống:** Nhấn nút **"💾 Lưu bài vào hệ thống (Không đăng ngay)"** để lưu toàn bộ nội dung bài viết và thông số vào cơ sở dữ liệu. Bạn có thể xem lại, sửa đổi và đăng bất cứ lúc nào.
+   - **Tùy chọn B - Đăng ngay lên Web:** Chọn hình thức đăng (*Sản phẩm WooCommerce* hoặc *Bài viết Blog*) rồi nhấn **"📤 Đăng lên tất cả website đã chọn"**.
 
 ---
 
@@ -100,8 +102,8 @@ python app.py
    - `regular_price` hoặc `Giá gốc` *(tùy chọn)*
    - `sale_price` hoặc `Giá khuyến mại` *(tùy chọn)*
 3. **Thao tác hàng loạt:**
-   - **Tùy chọn 1:** Chỉ tạo bài hàng loạt để kiểm tra kết quả trước.
-   - **Tùy chọn 2:** Tự động tạo bài và đăng trực tiếp lên tất cả website được chọn.
+   - **Tùy chọn 1 (Chỉ tạo bài hàng loạt):** Tự động tạo bài và **lưu toàn bộ vào CSDL hệ thống (Kho Bài Viết)** ở trạng thái nháp mà không đẩy lên WooCommerce.
+   - **Tùy chọn 2 (Tạo & Đăng ngay):** Tự động tạo bài và đăng trực tiếp lên tất cả website được chọn.
 
 ---
 
@@ -112,11 +114,15 @@ python app.py
 
 ---
 
-### Tab 4: 🕒 Lịch Sử Đăng Bài
+### Tab 4: 📚 Kho Bài Viết & Lịch Sử Đăng
 
-1. **Xem danh sách bài đăng:** Bảng thống kê chi tiết toàn bộ các bài viết và sản phẩm đã tạo và đăng qua hệ thống.
-2. **Lọc theo website:** Dễ dàng lọc bài theo từng website cụ thể hoặc xem tất cả.
-3. **Tra cứu nhanh:** Hiển thị trực tiếp trạng thái đăng, ngày giờ, ID và link mở thẳng bài viết trên WordPress/WooCommerce.
+1. **Kho lưu trữ bài viết:** Quản lý toàn bộ bài viết đã lưu nháp trên hệ thống và các bài đã đăng lên WordPress/WooCommerce.
+2. **Bộ lọc thông minh:** Dễ dàng lọc theo từng website hoặc lọc theo trạng thái (`💾 Đã lưu nháp`, `✅ Đã đăng`, `❌ Lỗi`).
+3. **Chi tiết & Thao tác từng bài:**
+   - Chọn bài viết trong danh sách để xem trước giao diện và mô tả ngắn.
+   - Chỉnh sửa trực tiếp tiêu đề, giá bán, mô tả hoặc sửa mã nguồn HTML.
+   - Bấm **"🚀 Đăng bài này lên Website ngay"** để xuất bản bài viết đã lưu lên WooCommerce bất cứ lúc nào.
+   - Bấm **"🗑️ Xóa bài này"** để dọn dẹp kho lưu trữ.
 
 ---
 

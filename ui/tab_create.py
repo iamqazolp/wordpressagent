@@ -136,6 +136,8 @@ def publish_to_sites_ui(articles_state, image_files, post_status, post_type, reg
         )
         
         # Ghi lại lịch sử đăng bài vào CSDL
+        import json
+        image_paths_json = json.dumps(image_paths, ensure_ascii=False)
         for result in results:
             site = crud.get_site_by_name(db, result['site_name'])
             if site:
@@ -153,6 +155,10 @@ def publish_to_sites_ui(articles_state, image_files, post_status, post_type, reg
                     wp_post_id=str(result.get('post_id', '')) if result.get('post_id') else None,
                     wp_post_url=result.get('post_url'),
                     error_message=result.get('error'),
+                    short_description=article.get('short_description', ''),
+                    regular_price=regular_price,
+                    sale_price=sale_price,
+                    image_paths_json=image_paths_json,
                 )
         
         # Định dạng kết quả thành markdown
@@ -167,6 +173,60 @@ def publish_to_sites_ui(articles_state, image_files, post_status, post_type, reg
             else:
                 report.append(f"- **{r['site_name']}**: ❌ {r['error']}")
         return '\n\n'.join(report)
+    finally:
+        db.close()
+
+
+def save_draft_articles_ui(articles_state, image_files, post_type, regular_price="", sale_price=""):
+    """
+    Lưu toàn bộ bài viết đã tạo vào hệ thống (bảng PostHistory) với trạng thái 'saved'.
+    Không bắt buộc phải đăng lên WooCommerce ngay.
+    """
+    if not articles_state:
+        return "❌ Chưa có nội dung bài viết nào để lưu! Hãy bấm '🚀 Tạo bài viết' trước."
+
+    import json
+    from db.database import SessionLocal
+    from db import crud
+
+    db = SessionLocal()
+    saved_count = 0
+    try:
+        image_paths = _extract_file_paths(image_files)
+        image_paths_json = json.dumps(image_paths, ensure_ascii=False)
+        is_prod = 'product' in post_type.lower() or 'sản phẩm' in post_type.lower()
+
+        for site_name, art in articles_state.items():
+            site = crud.get_site_by_name(db, site_name)
+            if not site:
+                continue
+
+            prod_name = art.get('product_name') or art.get('title', 'Sản phẩm')
+            crud.create_post_history(
+                db,
+                site_id=site.id,
+                product_name=prod_name,
+                title=art.get('title', ''),
+                raw_html=art.get('raw_html', ''),
+                post_type='product' if is_prod else 'post',
+                status='saved',
+                short_description=art.get('short_description', ''),
+                regular_price=regular_price,
+                sale_price=sale_price,
+                image_paths_json=image_paths_json,
+            )
+            saved_count += 1
+
+        gr.Info(f"✅ Đã lưu {saved_count} bài viết vào hệ thống!")
+        return (
+            f"### 💾 Đã lưu thành công {saved_count} bài viết vào hệ thống!\n\n"
+            f"- **Trạng thái:** `Đã lưu nháp trên Web` (chưa đẩy lên WordPress/WooCommerce).\n"
+            f"- **Bước tiếp theo:** Bạn có thể qua tab **📚 Kho Bài Viết & Lịch Sử** để xem lại danh sách, "
+            f"chỉnh sửa bài viết hoặc bấm nút đăng lên website bất cứ khi nào bạn muốn."
+        )
+    except Exception as e:
+        logger.exception("Lỗi khi lưu bài viết vào hệ thống")
+        return f"❌ Lỗi khi lưu bài viết: {str(e)}"
     finally:
         db.close()
 
@@ -424,6 +484,8 @@ def build_tab_create(db_session=None) -> dict:
             value="draft",
             info="'draft' = lưu nháp (khuyến nghị), 'publish' = công khai ngay",
         )
+    with gr.Row():
+        save_draft_btn = gr.Button("💾 Lưu bài vào hệ thống (Không đăng ngay)", variant="primary", size="lg")
         publish_btn = gr.Button("📤 Đăng lên tất cả các website đã chọn", variant="secondary", size="lg")
 
     publish_result = gr.Markdown()
@@ -466,6 +528,7 @@ def build_tab_create(db_session=None) -> dict:
         'save_html_btn': save_html_btn,
         'post_type_selector': post_type_selector,
         'post_status_selector': post_status_selector,
+        'save_draft_btn': save_draft_btn,
         'publish_btn': publish_btn,
         'publish_result': publish_result,
         'schedule_type': schedule_type,

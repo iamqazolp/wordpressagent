@@ -232,6 +232,10 @@ def create_post_history(
     wp_post_id: str | None = None,
     wp_post_url: str | None = None,
     error_message: str | None = None,
+    short_description: str = '',
+    regular_price: str = '',
+    sale_price: str = '',
+    image_paths_json: str = '[]',
 ) -> PostHistory | None:
     try:
         history = PostHistory(
@@ -244,6 +248,10 @@ def create_post_history(
             wp_post_id=wp_post_id,
             wp_post_url=wp_post_url,
             error_message=error_message,
+            short_description=short_description,
+            regular_price=regular_price,
+            sale_price=sale_price,
+            image_paths_json=image_paths_json,
         )
         db.add(history)
         db.commit()
@@ -253,6 +261,26 @@ def create_post_history(
         db.rollback()
         logger.error(f"Lỗi khi tạo post history: {e}")
         return None
+
+def get_post_history_by_id(db: Session, history_id: int) -> PostHistory | None:
+    try:
+        return db.query(PostHistory).filter(PostHistory.id == history_id).first()
+    except Exception as e:
+        logger.error(f"Lỗi khi lấy post history theo id {history_id}: {e}")
+        return None
+
+def delete_post_history(db: Session, history_id: int) -> bool:
+    try:
+        item = get_post_history_by_id(db, history_id)
+        if item:
+            db.delete(item)
+            db.commit()
+            return True
+        return False
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Lỗi khi xóa post history {history_id}: {e}")
+        return False
 
 def update_post_history(db: Session, history_id: int, **kwargs) -> PostHistory | None:
     try:

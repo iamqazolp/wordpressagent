@@ -35,6 +35,10 @@ class PostHistory(Base):
     wp_post_url = Column(String(500), nullable=True)
     status = Column(String(20), default="generated")
     error_message = Column(Text, nullable=True)
+    short_description = Column(Text, nullable=True, default="")
+    regular_price = Column(String(50), nullable=True, default="")
+    sale_price = Column(String(50), nullable=True, default="")
+    image_paths_json = Column(Text, nullable=True, default="[]")
     created_at = Column(DateTime, default=func.now())
     published_at = Column(DateTime, nullable=True)
 

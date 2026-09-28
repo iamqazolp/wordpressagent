@@ -4,7 +4,7 @@ import logging
 import gradio as gr
 
 from ui.tab_create import (
-    build_tab_create, run_pipeline_ui, publish_to_sites_ui, schedule_post_ui,
+    build_tab_create, run_pipeline_ui, publish_to_sites_ui, schedule_post_ui, save_draft_articles_ui,
     on_change_preview_site, on_edit_title, on_edit_short_desc, on_toggle_edit_mode, on_save_html_edit
 )
 from ui.tab_bulk import build_tab_bulk
@@ -43,7 +43,7 @@ def create_app() -> gr.Blocks:
             with gr.TabItem("✍️ Tạo & Đăng Bài"):
                 create_comps = build_tab_create()
 
-            # Tab 2: Tạo & Đăng Hàng Loạt (CSV)
+            # Tab 2: Tạo & Đăng Hàng Loạt (CSV / Excel)
             with gr.TabItem("📦 Tạo Hàng Loạt"):
                 bulk_comps = build_tab_bulk()
 
@@ -51,8 +51,8 @@ def create_app() -> gr.Blocks:
             with gr.TabItem("📅 Lịch Đăng Bài"):
                 scheduler_comps = build_tab_scheduler()
 
-            # Tab 4: Lịch sử đăng bài
-            with gr.TabItem("🕒 Lịch Sử Đăng"):
+            # Tab 4: Kho bài viết & Lịch sử
+            with gr.TabItem("📚 Kho Bài Viết & Lịch Sử"):
                 history_comps = build_tab_history()
 
             # Tab 5: Quản lý Template
@@ -167,6 +167,18 @@ def create_app() -> gr.Blocks:
             show_progress=True,
         )
 
+        create_comps['save_draft_btn'].click(
+            fn=save_draft_articles_ui,
+            inputs=[
+                articles_state,
+                create_comps['image_input'],
+                create_comps['post_type_selector'],
+                create_comps['regular_price_input'],
+                create_comps['sale_price_input'],
+            ],
+            outputs=[create_comps['publish_result']],
+        )
+
         create_comps['schedule_btn'].click(
             fn=schedule_post_ui,
             inputs=[
@@ -182,20 +194,7 @@ def create_app() -> gr.Blocks:
             outputs=[create_comps['schedule_result']],
         )
 
-        # =====================================================================
-        # EVENT WIRING (Tab 4: Lịch sử đăng bài)
-        # =====================================================================
-        history_comps['refresh_btn'].click(
-            fn=fetch_history_data,
-            inputs=[history_comps['site_filter']],
-            outputs=[history_comps['history_table']],
-        )
-
-        history_comps['site_filter'].change(
-            fn=fetch_history_data,
-            inputs=[history_comps['site_filter']],
-            outputs=[history_comps['history_table']],
-        )
+        # Tab 4 (Kho Bài Viết & Lịch Sử) tự quản lý toàn bộ sự kiện nội bộ bên trong build_tab_history()
 
         # =====================================================================
         # EVENT WIRING (Tab 5: Quản lý Template)

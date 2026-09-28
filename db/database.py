@@ -38,6 +38,26 @@ def init_db():
     # Create tables
     Base.metadata.create_all(bind=engine)
     logger.info(f"Initialized database at {DB_PATH}")
+
+    # Ensure schema migrations
+    try:
+        import sqlite3
+        conn = sqlite3.connect(str(DB_PATH))
+        c = conn.cursor()
+        c.execute("PRAGMA table_info(post_history)")
+        cols = [r[1] for r in c.fetchall()]
+        for col_name, col_type in [
+            ("short_description", "TEXT"),
+            ("regular_price", "VARCHAR(50)"),
+            ("sale_price", "VARCHAR(50)"),
+            ("image_paths_json", "TEXT")
+        ]:
+            if col_name not in cols:
+                c.execute(f"ALTER TABLE post_history ADD COLUMN {col_name} {col_type}")
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.warning(f"Lỗi kiểm tra migration cột: {e}")
     
     # Seed default templates and migrate data
     db = SessionLocal()

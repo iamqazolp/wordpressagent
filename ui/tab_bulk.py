@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import logging
 import re
+from pathlib import Path
 import pandas as pd
 import gradio as gr
 
@@ -38,83 +39,117 @@ def load_templates() -> list[str]:
 
 def parse_csv_file(file) -> tuple:
     """
-    Phân tích file CSV tải lên.
+    Phân tích file CSV hoặc Excel (.xlsx, .xls) tải lên.
     Trả về: (preview_dataframe, parsed_products_state, status_msg)
     """
     if not file:
-        return pd.DataFrame(), [], "❌ Vui lòng tải lên file CSV."
+        return pd.DataFrame(), [], "❌ Vui lòng tải lên file CSV hoặc Excel."
 
     parsed_products_state = []
     file_path = file.name if hasattr(file, "name") else str(file)
+    ext = Path(file_path).suffix.lower()
 
     try:
-        with open(file_path, "r", encoding="utf-8-sig") as f:
-            reader = csv.DictReader(f)
-            if not reader.fieldnames:
-                return pd.DataFrame(), [], "❌ File CSV rỗng hoặc không đúng định dạng."
+        rows = []
+        if ext in [".xlsx", ".xls"]:
+            # Đọc file Excel bằng openpyxl / pandas
+            df_raw = pd.read_excel(file_path, dtype=str).fillna("")
+            rows = df_raw.to_dict(orient="records")
+        else:
+            # Đọc file CSV
+            try:
+                with open(file_path, "r", encoding="utf-8-sig") as f:
+                    reader = csv.DictReader(f)
+                    if not reader.fieldnames:
+                        return pd.DataFrame(), [], "❌ File rỗng hoặc không đúng định dạng."
+                    rows = list(reader)
+            except UnicodeDecodeError:
+                with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                    reader = csv.DictReader(f)
+                    if not reader.fieldnames:
+                        return pd.DataFrame(), [], "❌ File rỗng hoặc không đúng định dạng."
+                    rows = list(reader)
 
-            # Chuẩn hóa tên các cột (bỏ khoảng trắng và chữ hoa)
-            for row in reader:
-                cleaned_row = {
-                    k.strip().lower(): (v.strip() if v else "")
-                    for k, v in row.items()
-                    if k
-                }
+        for row in rows:
+            cleaned_row = {
+                str(k).strip().lower(): (str(v).strip() if v is not None and not (isinstance(v, float) and pd.isna(v)) else "")
+                for k, v in row.items()
+                if k is not None
+            }
 
-                # Tìm cột tên sản phẩm linh hoạt (product_name, ten_san_pham, name, san_pham)
-                p_name = (
-                    cleaned_row.get("product_name")
-                    or cleaned_row.get("ten_san_pham")
-                    or cleaned_row.get("name")
-                    or cleaned_row.get("san_pham")
-                    or ""
-                )
+            # Tìm cột tên sản phẩm linh hoạt
+            p_name = (
+                cleaned_row.get("product_name")
+                or cleaned_row.get("ten_san_pham")
+                or cleaned_row.get("tên sản phẩm")
+                or cleaned_row.get("name")
+                or cleaned_row.get("san_pham")
+                or cleaned_row.get("sản phẩm")
+                or cleaned_row.get("tên")
+                or ""
+            )
+            if not p_name or p_name.lower() == "nan":
+                continue
 
-                if not p_name:
-                    continue
+            ref_urls = (
+                cleaned_row.get("ref_urls")
+                or cleaned_row.get("url")
+                or cleaned_row.get("link")
+                or cleaned_row.get("url tham khảo")
+                or ""
+            )
+            if ref_urls.lower() == "nan":
+                ref_urls = ""
 
-                ref_urls = (
-                    cleaned_row.get("ref_urls")
-                    or cleaned_row.get("url")
-                    or cleaned_row.get("link")
-                    or ""
-                )
-                notes = (
-                    cleaned_row.get("notes")
-                    or cleaned_row.get("ghi_chu")
-                    or cleaned_row.get("note")
-                    or ""
-                )
-                regular_price = (
-                    cleaned_row.get("regular_price")
-                    or cleaned_row.get("gia_goc")
-                    or cleaned_row.get("price")
-                    or ""
-                )
-                sale_price = (
-                    cleaned_row.get("sale_price")
-                    or cleaned_row.get("gia_khuyen_mai")
-                    or cleaned_row.get("sale")
-                    or ""
-                )
+            notes = (
+                cleaned_row.get("notes")
+                or cleaned_row.get("ghi_chu")
+                or cleaned_row.get("ghi chú")
+                or cleaned_row.get("ghi chú ai")
+                or cleaned_row.get("note")
+                or ""
+            )
+            if notes.lower() == "nan":
+                notes = ""
 
-                parsed_products_state.append({
-                    "product_name": p_name,
-                    "ref_urls": ref_urls,
-                    "notes": notes,
-                    "regular_price": regular_price,
-                    "sale_price": sale_price,
-                })
+            regular_price = (
+                cleaned_row.get("regular_price")
+                or cleaned_row.get("gia_goc")
+                or cleaned_row.get("giá gốc")
+                or cleaned_row.get("giá")
+                or cleaned_row.get("price")
+                or ""
+            )
+            if regular_price.lower() == "nan":
+                regular_price = ""
+
+            sale_price = (
+                cleaned_row.get("sale_price")
+                or cleaned_row.get("gia_khuyen_mai")
+                or cleaned_row.get("giá khuyến mại")
+                or cleaned_row.get("giá km")
+                or cleaned_row.get("sale")
+                or ""
+            )
+            if sale_price.lower() == "nan":
+                sale_price = ""
+
+            parsed_products_state.append({
+                "product_name": p_name,
+                "ref_urls": ref_urls,
+                "notes": notes,
+                "regular_price": regular_price,
+                "sale_price": sale_price,
+            })
 
         if not parsed_products_state:
             return (
                 pd.DataFrame(),
                 [],
-                "❌ Không tìm thấy dòng dữ liệu hợp lệ nào (cần cột 'product_name').",
+                "❌ Không tìm thấy dòng dữ liệu hợp lệ nào (cần cột 'product_name' hoặc 'tên sản phẩm').",
             )
 
         df = pd.DataFrame(parsed_products_state)
-        # Đổi tên cột hiển thị cho thân thiện
         display_df = df.rename(columns={
             "product_name": "Tên sản phẩm",
             "ref_urls": "URL tham khảo",
@@ -122,10 +157,11 @@ def parse_csv_file(file) -> tuple:
             "regular_price": "Giá gốc",
             "sale_price": "Giá KM",
         })
-        return display_df, parsed_products_state, f"✅ Đã tải thành công {len(parsed_products_state)} sản phẩm!"
+        file_type_name = "Excel" if ext in [".xlsx", ".xls"] else "CSV"
+        return display_df, parsed_products_state, f"✅ Đã tải thành công {len(parsed_products_state)} sản phẩm từ file {file_type_name}!"
     except Exception as e:
-        logger.exception("Lỗi khi đọc file CSV")
-        return pd.DataFrame(), [], f"❌ Lỗi đọc file CSV: {str(e)}"
+        logger.exception("Lỗi khi đọc file CSV / Excel")
+        return pd.DataFrame(), [], f"❌ Lỗi đọc file: {str(e)}"
 
 
 def run_bulk_generate(
@@ -341,31 +377,31 @@ def build_tab_bulk() -> dict:
     gr.Markdown("""
     <div style="margin-bottom: 15px;">
         <h3>📦 Tạo & Đăng Bài Hàng Loạt Từ File CSV / Excel</h3>
-        <p style="color: #666;">Nhập danh sách sản phẩm qua file CSV để tự động tìm kiếm, tạo bài viết độc bản và đăng lên hàng loạt website.</p>
+        <p style="color: #666;">Nhập danh sách sản phẩm qua file CSV hoặc Excel (.xlsx, .xls) để tự động tìm kiếm, tạo bài viết độc bản và đăng lên hàng loạt website.</p>
     </div>
     """)
 
     with gr.Row():
         with gr.Column(scale=1):
             file_input = gr.File(
-                label="📁 Tải lên file CSV sản phẩm",
-                file_types=[".csv"],
+                label="📁 Tải lên file CSV / Excel sản phẩm",
+                file_types=[".csv", ".xlsx", ".xls"],
                 file_count="single",
             )
             gr.Markdown("""
-            **📋 Cấu trúc các cột trong file CSV (hỗ trợ tiếng Việt hoặc tiếng Anh):**
-            - `product_name` *(bắt buộc)*: Tên sản phẩm
-            - `ref_urls` *(tùy chọn)*: URL tham khảo (phân cách bằng dấu `;`)
-            - `notes` *(tùy chọn)*: Ghi chú, yêu cầu riêng cho AI
-            - `regular_price` *(tùy chọn)*: Giá gốc (VNĐ)
-            - `sale_price` *(tùy chọn)*: Giá khuyến mại (VNĐ)
+            **📋 Cấu trúc các cột trong file CSV / Excel (hỗ trợ tiếng Việt hoặc tiếng Anh):**
+            - `product_name` hoặc `Tên sản phẩm` *(bắt buộc)*: Tên sản phẩm
+            - `ref_urls` hoặc `URL tham khảo` *(tùy chọn)*: URL tham khảo (phân cách bằng dấu `;`)
+            - `notes` hoặc `Ghi chú AI` *(tùy chọn)*: Ghi chú, yêu cầu riêng cho AI
+            - `regular_price` hoặc `Giá gốc` *(tùy chọn)*: Giá gốc (VNĐ)
+            - `sale_price` hoặc `Giá khuyến mại` *(tùy chọn)*: Giá khuyến mại (VNĐ)
             """)
-            parse_btn = gr.Button("📑 Đọc & Kiểm tra File CSV", variant="secondary")
+            parse_btn = gr.Button("📑 Đọc & Kiểm tra File (CSV / Excel)", variant="secondary")
 
         with gr.Column(scale=2):
             parse_status = gr.Markdown("Chưa tải file.")
             preview_df = gr.Dataframe(
-                label="Bảng dữ liệu sản phẩm đọc được từ CSV",
+                label="Bảng dữ liệu sản phẩm đọc được từ file",
                 interactive=False,
                 wrap=True,
             )

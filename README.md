@@ -90,7 +90,29 @@ python app.py
 
 ---
 
-### Tab 2: 🕒 Lịch Sử Đăng Bài
+### Tab 2: 📦 Tạo & Đăng Hàng Loạt (CSV / Excel)
+
+1. **Hỗ trợ định dạng:** Tải lên file `.csv` hoặc bảng tính Excel (`.xlsx`, `.xls`).
+2. **Cấu trúc cột linh hoạt (tiếng Việt hoặc tiếng Anh):**
+   - `product_name` hoặc `Tên sản phẩm` *(bắt buộc)*
+   - `ref_urls` hoặc `URL tham khảo` *(tùy chọn)*
+   - `notes` hoặc `Ghi chú AI` *(tùy chọn)*
+   - `regular_price` hoặc `Giá gốc` *(tùy chọn)*
+   - `sale_price` hoặc `Giá khuyến mại` *(tùy chọn)*
+3. **Thao tác hàng loạt:**
+   - **Tùy chọn 1:** Chỉ tạo bài hàng loạt để kiểm tra kết quả trước.
+   - **Tùy chọn 2:** Tự động tạo bài và đăng trực tiếp lên tất cả website được chọn.
+
+---
+
+### Tab 3: 📅 Lịch Đăng Bài (Scheduler)
+
+1. **Lên lịch đăng bài tự động:** Chọn ngày giờ cụ thể để hệ thống tự động xuất bản bài viết lên các website mà không cần thao tác thủ công.
+2. **Quản lý tác vụ:** Theo dõi danh sách công việc đang chờ chạy, hủy hoặc chỉnh sửa lịch trình dễ dàng.
+
+---
+
+### Tab 4: 🕒 Lịch Sử Đăng Bài
 
 1. **Xem danh sách bài đăng:** Bảng thống kê chi tiết toàn bộ các bài viết và sản phẩm đã tạo và đăng qua hệ thống.
 2. **Lọc theo website:** Dễ dàng lọc bài theo từng website cụ thể hoặc xem tất cả.
@@ -98,7 +120,14 @@ python app.py
 
 ---
 
-### Tab 3: ⚙️ Quản Lý Website
+### Tab 5: 📝 Quản Lý Template
+
+1. **Quản lý mẫu prompt:** Tạo, xem, chỉnh sửa hoặc xóa các mẫu prompt viết bài theo từng ngành hàng cụ thể.
+2. **Mẫu mặc định tối ưu:** Tích hợp sẵn mẫu prompt chuẩn kỹ thuật, tự động giảm thiểu lặp từ và tối ưu bảng thông số.
+
+---
+
+### Tab 6: ⚙️ Quản Lý Website
 
 1. **Xem danh sách website:** Bảng thống kê hiển thị tên website, đường dẫn URL, và trạng thái cấu hình.
 2. **Thêm website mới:**

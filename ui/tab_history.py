@@ -206,17 +206,19 @@ def on_save_history_edits(
     sale_price: str,
     raw_html: str,
     new_images_input=None,
+    site_filter: str = "Tất cả",
+    status_filter: str = "Tất cả",
 ) -> tuple:
-    """Lưu các thay đổi nội dung và hình ảnh của bài viết vào database."""
+    """Lưu các thay đổi nội dung và hình ảnh của bài viết vào database, cập nhật bảng và giữ nguyên bài đang chọn."""
     post_id = _extract_id_from_choice(choice_str)
     if not post_id:
-        return "❌ Vui lòng chọn một bài viết để lưu!", gr.update(), gr.update()
+        return "❌ Vui lòng chọn một bài viết để lưu!", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
     db = SessionLocal()
     try:
         h = crud.get_post_history_by_id(db, post_id)
         if not h:
-            return "❌ Không tìm thấy bài viết để cập nhật!", gr.update(), gr.update()
+            return "❌ Không tìm thấy bài viết để cập nhật!", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
         h.title = title.strip()
         h.short_description = short_desc.strip()
@@ -240,16 +242,37 @@ def on_save_history_edits(
         existing_images = [p for p in current_images if Path(p).exists()]
         updated_preview = pipeline.make_preview_html(h.raw_html, existing_images)
 
+        # Cập nhật danh sách choices và bảng dữ liệu mà vẫn giữ đúng post hiện tại
+        updated_df = fetch_history_data(site_filter, status_filter)
+        choices = get_history_post_choices(site_filter, status_filter)
+        current_choice = next((c for c in choices if c.startswith(f"#{h.id} - ")), choice_str)
+
+        site_name = h.site.name if h.site else "Unknown"
+        info_lines = [
+            f"### 📄 Bài viết #{h.id}: **{h.product_name}**",
+            f"- **Website đích:** `{site_name}` ({h.site.url if h.site else ''})",
+            f"- **Trạng thái:** `{'💾 Đã lưu nháp trên Web' if h.status == 'saved' else ('✅ Đã đăng lên Website' if h.status == 'published' else h.status)}`",
+            f"- **Số lượng ảnh đính kèm:** {len(existing_images)} ảnh",
+            f"- **Ngày cập nhật:** {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        ]
+        if h.wp_post_url:
+            info_lines.append(f"- **Link WordPress:** [Xem sản phẩm trên Web]({h.wp_post_url})")
+        info_md = "\n".join(info_lines)
+
         gr.Info(f"✅ Đã lưu cập nhật cho bài #{h.id}!")
         return (
             f"✅ **Đã lưu cập nhật thành công cho bài #{h.id} ({h.product_name})!** (Hình ảnh: {len(existing_images)} ảnh)",
             updated_preview,
             existing_images if existing_images else None,
+            updated_df,
+            gr.update(choices=choices, value=current_choice),
+            info_md,
+            None,
         )
     except Exception as e:
         db.rollback()
         logger.exception("Lỗi khi lưu bài viết đã chọn")
-        return f"❌ Lỗi khi lưu: {str(e)}", gr.update(), gr.update()
+        return f"❌ Lỗi khi lưu: {str(e)}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
     finally:
         db.close()
 
@@ -264,21 +287,23 @@ def on_publish_history_post(
     post_type: str,
     post_status: str,
     new_images_input=None,
+    site_filter: str = "Tất cả",
+    status_filter: str = "Tất cả",
 ) -> tuple:
-    """Đăng ngay bài viết đã lưu kèm hình ảnh lên WordPress/WooCommerce."""
+    """Đăng ngay bài viết đã lưu kèm hình ảnh lên WordPress/WooCommerce và cập nhật trạng thái."""
     post_id = _extract_id_from_choice(choice_str)
     if not post_id:
-        return "❌ Vui lòng chọn một bài viết để đăng!", gr.update(), gr.update(), gr.update()
+        return "❌ Vui lòng chọn một bài viết để đăng!", gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
     db = SessionLocal()
     try:
         h = crud.get_post_history_by_id(db, post_id)
         if not h or not h.site:
-            return "❌ Không tìm thấy bài viết hoặc website cấu hình!", gr.update(), gr.update(), gr.update()
+            return "❌ Không tìm thấy bài viết hoặc website cấu hình!", gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
         site_config = crud.get_site_config(db, h.site_id)
         if not site_config:
-            return "❌ Không tìm thấy thông tin xác thực của website!", gr.update(), gr.update(), gr.update()
+            return "❌ Không tìm thấy thông tin xác thực của website!", gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
         # Xác định hình ảnh đăng bài: ưu tiên ảnh mới upload, nếu không thì lấy ảnh đã lưu
         new_paths = _extract_file_paths(new_images_input)
@@ -351,22 +376,42 @@ def on_publish_history_post(
             result_msg += f"- ⚠️ *Cảnh báo ảnh:* {image_warning}\n"
 
         gr.Info(f"🎉 Đã đăng thành công lên {h.site.name}!")
-        updated_table = fetch_history_data()
-        updated_choices = get_history_post_choices()
-        return result_msg, updated_table, gr.update(choices=updated_choices), valid_image_paths if valid_image_paths else None
+        updated_table = fetch_history_data(site_filter, status_filter)
+        updated_choices = get_history_post_choices(site_filter, status_filter)
+        current_choice = next((c for c in updated_choices if c.startswith(f"#{h.id} - ")), None)
+
+        site_name = h.site.name if h.site else "Unknown"
+        info_lines = [
+            f"### 📄 Bài viết #{h.id}: **{h.product_name}**",
+            f"- **Website đích:** `{site_name}` ({h.site.url if h.site else ''})",
+            f"- **Trạng thái:** `✅ Đã đăng lên Website ({status_badge})`",
+            f"- **Số lượng ảnh đính kèm:** {len(valid_image_paths)} ảnh",
+            f"- **Ngày đăng:** {h.published_at.strftime('%Y-%m-%d %H:%M') if h.published_at else ''}",
+            f"- **Link WordPress:** [Xem sản phẩm trên Web]({res.get('post_url')})",
+        ]
+        info_md = "\n".join(info_lines)
+
+        return (
+            result_msg,
+            updated_table,
+            gr.update(choices=updated_choices, value=current_choice),
+            valid_image_paths if valid_image_paths else None,
+            info_md,
+            None,
+        )
 
     except Exception as e:
         logger.exception("Lỗi khi đăng bài đã lưu")
-        return f"❌ Đăng thất bại: {str(e)}", gr.update(), gr.update(), gr.update()
+        return f"❌ Đăng thất bại: {str(e)}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
     finally:
         db.close()
 
 
-def on_delete_history_post(choice_str: str) -> tuple:
-    """Xóa bài viết khỏi CSDL."""
+def on_delete_history_post(choice_str: str, site_filter: str = "Tất cả", status_filter: str = "Tất cả") -> tuple:
+    """Xóa bài viết khỏi CSDL và làm mới danh sách."""
     post_id = _extract_id_from_choice(choice_str)
     if not post_id:
-        return "❌ Vui lòng chọn bài viết cần xóa!", gr.update(), gr.update(), None
+        return "❌ Vui lòng chọn bài viết cần xóa!", gr.update(), gr.update(), None, "*(Chưa chọn bài viết)*"
 
     db = SessionLocal()
     try:
@@ -377,9 +422,15 @@ def on_delete_history_post(choice_str: str) -> tuple:
         else:
             msg = f"❌ Không thể xóa bài viết #{post_id}."
         
-        updated_table = fetch_history_data()
-        updated_choices = get_history_post_choices()
-        return msg, updated_table, gr.update(choices=updated_choices, value=updated_choices[0] if updated_choices else None), None
+        updated_table = fetch_history_data(site_filter, status_filter)
+        updated_choices = get_history_post_choices(site_filter, status_filter)
+        return (
+            msg,
+            updated_table,
+            gr.update(choices=updated_choices, value=updated_choices[0] if updated_choices else None),
+            None,
+            "*(Đã xóa bài viết - vui lòng chọn bài khác)*",
+        )
     finally:
         db.close()
 
@@ -397,6 +448,25 @@ def build_tab_history(db_session=None) -> dict:
     finally:
         if db_session is None:
             db.close()
+
+    first_choice = initial_choices[0] if (initial_choices and not initial_choices[0].startswith("(")) else None
+    (
+        init_title,
+        init_short_desc,
+        init_reg_price,
+        init_sale_price,
+        init_post_type,
+        init_post_status,
+        init_preview_html,
+        init_raw_html,
+        init_info_md,
+        init_images,
+        _,
+    ) = (
+        on_select_history_post(first_choice)
+        if first_choice
+        else ("", "", "", "", "Sản phẩm WooCommerce", "draft", "", "", "*(Chưa có bài viết nào trong kho)*", None, None)
+    )
 
     gr.Markdown("""
     <div style="margin-bottom: 15px;">
@@ -432,27 +502,28 @@ def build_tab_history(db_session=None) -> dict:
 
     with gr.Row():
         post_selector = gr.Dropdown(
-            label="👉 Chọn bài viết để xem chi tiết / chỉnh sửa / đăng bài:",
+            label="👉 Chọn bài viết để xem chi tiết / chỉnh sửa / đăng bài (hoặc click vào 1 dòng trong bảng trên):",
             choices=initial_choices,
-            value=initial_choices[0] if initial_choices else None,
+            value=first_choice if first_choice else (initial_choices[0] if initial_choices else None),
             interactive=True,
         )
 
-    post_info_box = gr.Markdown("*(Chọn một bài viết ở trên để xem chi tiết)*")
+    post_info_box = gr.Markdown(init_info_md)
 
     with gr.Row():
         with gr.Column(scale=1):
-            title_input = gr.Textbox(label="📝 Tiêu đề sản phẩm", lines=1, interactive=True)
-            short_desc_input = gr.Code(label="📑 Mô tả ngắn (HTML)", language="html", lines=4, interactive=True)
+            title_input = gr.Textbox(label="📝 Tiêu đề sản phẩm", value=init_title, lines=1, interactive=True)
+            short_desc_input = gr.Code(label="📑 Mô tả ngắn (HTML)", value=init_short_desc, language="html", lines=4, interactive=True)
             
             with gr.Row():
-                reg_price_input = gr.Textbox(label="💵 Giá gốc (VNĐ)", lines=1, interactive=True)
-                sale_price_input = gr.Textbox(label="🏷️ Giá KM (VNĐ)", lines=1, interactive=True)
+                reg_price_input = gr.Textbox(label="💵 Giá gốc (VNĐ)", value=init_reg_price, lines=1, interactive=True)
+                sale_price_input = gr.Textbox(label="🏷️ Giá KM (VNĐ)", value=init_sale_price, lines=1, interactive=True)
 
             # Phần hình ảnh của bài viết
             gr.Markdown("#### 🖼️ Quản Lý Hình Ảnh Sản Phẩm")
             images_gallery = gr.Gallery(
                 label="Album ảnh hiện có của bài viết",
+                value=init_images,
                 columns=4,
                 rows=1,
                 height=150,
@@ -469,12 +540,12 @@ def build_tab_history(db_session=None) -> dict:
                 post_type_selector = gr.Radio(
                     label="Loại nội dung",
                     choices=["Sản phẩm WooCommerce", "Bài viết Blog"],
-                    value="Sản phẩm WooCommerce",
+                    value=init_post_type,
                 )
                 post_status_selector = gr.Radio(
                     label="Trạng thái khi đăng",
                     choices=["draft", "publish"],
-                    value="draft",
+                    value=init_post_status,
                     info="'draft' = lưu nháp WP, 'publish' = công khai ngay",
                 )
 
@@ -490,47 +561,89 @@ def build_tab_history(db_session=None) -> dict:
                 toggle_history_edit_btn = gr.Button("🔄 Chuyển đổi (Xem / Sửa HTML)")
             history_edit_mode = gr.State(False)
 
-            preview_output = gr.HTML(label="Xem trước bài viết", visible=True)
-            html_editor = gr.Code(label="Chỉnh sửa mã HTML", language="html", visible=False, interactive=True)
+            preview_output = gr.HTML(label="Xem trước bài viết", value=init_preview_html, visible=True)
+            html_editor = gr.Code(label="Chỉnh sửa mã HTML", value=init_raw_html, language="html", visible=False, interactive=True)
 
     # XỬ LÝ SỰ KIỆN NỘI BỘ
     def _on_filter_change(site_f, status_f):
         df = fetch_history_data(site_f, status_f)
         choices = get_history_post_choices(site_f, status_f)
-        return df, gr.update(choices=choices, value=choices[0] if choices else None)
+        new_val = choices[0] if choices else None
+        return df, gr.update(choices=choices, value=new_val)
+
+    detail_outputs = [
+        title_input,
+        short_desc_input,
+        reg_price_input,
+        sale_price_input,
+        post_type_selector,
+        post_status_selector,
+        preview_output,
+        html_editor,
+        post_info_box,
+        images_gallery,
+        images_upload,
+    ]
 
     site_filter.change(
         fn=_on_filter_change,
         inputs=[site_filter, status_filter],
         outputs=[history_table, post_selector],
+    ).then(
+        fn=on_select_history_post,
+        inputs=[post_selector],
+        outputs=detail_outputs,
     )
+
     status_filter.change(
         fn=_on_filter_change,
         inputs=[site_filter, status_filter],
         outputs=[history_table, post_selector],
+    ).then(
+        fn=on_select_history_post,
+        inputs=[post_selector],
+        outputs=detail_outputs,
     )
+
     refresh_btn.click(
         fn=_on_filter_change,
         inputs=[site_filter, status_filter],
         outputs=[history_table, post_selector],
+    ).then(
+        fn=on_select_history_post,
+        inputs=[post_selector],
+        outputs=detail_outputs,
+    )
+
+    # Click vào dòng trên bảng -> tự động load bài viết đó vào chi tiết
+    def _on_table_row_select(evt: gr.SelectData, site_f, status_f):
+        try:
+            row_idx = evt.index[0]
+            df = fetch_history_data(site_f, status_f)
+            if not df.empty and row_idx < len(df):
+                selected_id = int(df.iloc[row_idx]["ID"])
+                choices = get_history_post_choices(site_f, status_f)
+                matched = next((c for c in choices if c.startswith(f"#{selected_id} - ")), None)
+                if matched:
+                    return gr.update(value=matched)
+        except Exception as e:
+            logger.warning(f"Lỗi select table row: {e}")
+        return gr.update()
+
+    history_table.select(
+        fn=_on_table_row_select,
+        inputs=[site_filter, status_filter],
+        outputs=[post_selector],
+    ).then(
+        fn=on_select_history_post,
+        inputs=[post_selector],
+        outputs=detail_outputs,
     )
 
     post_selector.change(
         fn=on_select_history_post,
         inputs=[post_selector],
-        outputs=[
-            title_input,
-            short_desc_input,
-            reg_price_input,
-            sale_price_input,
-            post_type_selector,
-            post_status_selector,
-            preview_output,
-            html_editor,
-            post_info_box,
-            images_gallery,
-            images_upload,
-        ],
+        outputs=detail_outputs,
     )
 
     def _on_toggle_history_mode(mode_val, html_val):
@@ -549,12 +662,8 @@ def build_tab_history(db_session=None) -> dict:
 
     save_edits_btn.click(
         fn=on_save_history_edits,
-        inputs=[post_selector, title_input, short_desc_input, reg_price_input, sale_price_input, html_editor, images_upload],
-        outputs=[action_result_box, preview_output, images_gallery],
-    ).then(
-        fn=_on_filter_change,
-        inputs=[site_filter, status_filter],
-        outputs=[history_table, post_selector],
+        inputs=[post_selector, title_input, short_desc_input, reg_price_input, sale_price_input, html_editor, images_upload, site_filter, status_filter],
+        outputs=[action_result_box, preview_output, images_gallery, history_table, post_selector, post_info_box, images_upload],
     )
 
     publish_single_btn.click(
@@ -569,15 +678,21 @@ def build_tab_history(db_session=None) -> dict:
             post_type_selector,
             post_status_selector,
             images_upload,
+            site_filter,
+            status_filter,
         ],
-        outputs=[action_result_box, history_table, post_selector, images_gallery],
+        outputs=[action_result_box, history_table, post_selector, images_gallery, post_info_box, images_upload],
         show_progress=True,
     )
 
     delete_btn.click(
         fn=on_delete_history_post,
+        inputs=[post_selector, site_filter, status_filter],
+        outputs=[action_result_box, history_table, post_selector, images_gallery, post_info_box],
+    ).then(
+        fn=on_select_history_post,
         inputs=[post_selector],
-        outputs=[action_result_box, history_table, post_selector, images_gallery],
+        outputs=detail_outputs,
     )
 
     return {
@@ -600,4 +715,5 @@ def build_tab_history(db_session=None) -> dict:
         "preview_output": preview_output,
         "html_editor": html_editor,
         "action_result_box": action_result_box,
+        "post_info_box": post_info_box,
     }

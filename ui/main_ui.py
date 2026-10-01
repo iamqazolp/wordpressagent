@@ -16,7 +16,7 @@ from ui.tab_sites import (
     build_tab_sites, handle_save_site, handle_delete_site, handle_test_connection_ui, on_select_site_for_edit
 )
 from ui.tab_history import (
-    build_tab_history, fetch_history_data
+    build_tab_history, fetch_history_data, get_history_post_choices, on_select_history_post
 )
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ def create_app() -> gr.Blocks:
                 scheduler_comps = build_tab_scheduler()
 
             # Tab 4: Kho bài viết & Lịch sử
-            with gr.TabItem("📚 Kho Bài Viết & Lịch Sử"):
+            with gr.TabItem("📚 Kho Bài Viết & Lịch Sử") as tab_history_item:
                 history_comps = build_tab_history()
 
             # Tab 5: Quản lý Template
@@ -153,8 +153,29 @@ def create_app() -> gr.Blocks:
             ],
         )
 
+        history_detail_outputs = [
+            history_comps['title_input'],
+            history_comps['short_desc_input'],
+            history_comps['reg_price_input'],
+            history_comps['sale_price_input'],
+            history_comps['post_type_selector'],
+            history_comps['post_status_selector'],
+            history_comps['preview_output'],
+            history_comps['html_editor'],
+            history_comps['post_info_box'],
+            history_comps['images_gallery'],
+            history_comps['images_upload'],
+        ]
+
+        def _on_publish_and_sync(art_state, imgs, p_status, p_type, r_price, s_price, s_filter, st_filter):
+            msg = publish_to_sites_ui(art_state, imgs, p_status, p_type, r_price, s_price)
+            df = fetch_history_data(s_filter, st_filter)
+            choices = get_history_post_choices(s_filter, st_filter)
+            new_val = choices[0] if choices else None
+            return msg, df, gr.update(choices=choices, value=new_val)
+
         create_comps['publish_btn'].click(
-            fn=publish_to_sites_ui,
+            fn=_on_publish_and_sync,
             inputs=[
                 articles_state,
                 create_comps['image_input'],
@@ -162,21 +183,48 @@ def create_app() -> gr.Blocks:
                 create_comps['post_type_selector'],
                 create_comps['regular_price_input'],
                 create_comps['sale_price_input'],
+                history_comps['site_filter'],
+                history_comps['status_filter'],
             ],
-            outputs=[create_comps['publish_result']],
+            outputs=[
+                create_comps['publish_result'],
+                history_comps['history_table'],
+                history_comps['post_selector'],
+            ],
             show_progress=True,
+        ).then(
+            fn=on_select_history_post,
+            inputs=[history_comps['post_selector']],
+            outputs=history_detail_outputs,
         )
 
+        def _on_save_draft_and_sync(art_state, imgs, p_type, r_price, s_price, s_filter, st_filter):
+            msg = save_draft_articles_ui(art_state, imgs, p_type, r_price, s_price)
+            df = fetch_history_data(s_filter, st_filter)
+            choices = get_history_post_choices(s_filter, st_filter)
+            new_val = choices[0] if choices else None
+            return msg, df, gr.update(choices=choices, value=new_val)
+
         create_comps['save_draft_btn'].click(
-            fn=save_draft_articles_ui,
+            fn=_on_save_draft_and_sync,
             inputs=[
                 articles_state,
                 create_comps['image_input'],
                 create_comps['post_type_selector'],
                 create_comps['regular_price_input'],
                 create_comps['sale_price_input'],
+                history_comps['site_filter'],
+                history_comps['status_filter'],
             ],
-            outputs=[create_comps['publish_result']],
+            outputs=[
+                create_comps['publish_result'],
+                history_comps['history_table'],
+                history_comps['post_selector'],
+            ],
+        ).then(
+            fn=on_select_history_post,
+            inputs=[history_comps['post_selector']],
+            outputs=history_detail_outputs,
         )
 
         create_comps['schedule_btn'].click(
@@ -194,7 +242,25 @@ def create_app() -> gr.Blocks:
             outputs=[create_comps['schedule_result']],
         )
 
-        # Tab 4 (Kho Bài Viết & Lịch Sử) tự quản lý toàn bộ sự kiện nội bộ bên trong build_tab_history()
+        # =====================================================================
+        # EVENT WIRING (Tab 4: Kho Bài Viết & Lịch Sử)
+        # Tự động đồng bộ và nạp dữ liệu mới nhất khi người dùng chuyển sang Tab 4
+        # =====================================================================
+        def _on_switch_to_history_tab(site_f, status_f, current_choice):
+            df = fetch_history_data(site_f, status_f)
+            choices = get_history_post_choices(site_f, status_f)
+            val = current_choice if (current_choice and current_choice in choices) else (choices[0] if choices else None)
+            return df, gr.update(choices=choices, value=val)
+
+        tab_history_item.select(
+            fn=_on_switch_to_history_tab,
+            inputs=[history_comps['site_filter'], history_comps['status_filter'], history_comps['post_selector']],
+            outputs=[history_comps['history_table'], history_comps['post_selector']],
+        ).then(
+            fn=on_select_history_post,
+            inputs=[history_comps['post_selector']],
+            outputs=history_detail_outputs,
+        )
 
         # =====================================================================
         # EVENT WIRING (Tab 5: Quản lý Template)

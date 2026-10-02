@@ -54,6 +54,18 @@ def init_db():
         ]:
             if col_name not in cols:
                 c.execute(f"ALTER TABLE post_history ADD COLUMN {col_name} {col_type}")
+
+        # Ensure schema migrations cho bảng sites (Watermark Phase 3)
+        c.execute("PRAGMA table_info(sites)")
+        site_cols = [r[1] for r in c.fetchall()]
+        for col_name, col_type in [
+            ("watermark_path", "VARCHAR(500) DEFAULT ''"),
+            ("watermark_position", "VARCHAR(50) DEFAULT 'bottom-right'"),
+            ("watermark_opacity", "FLOAT DEFAULT 0.7")
+        ]:
+            if col_name not in site_cols:
+                c.execute(f"ALTER TABLE sites ADD COLUMN {col_name} {col_type}")
+
         conn.commit()
         conn.close()
     except Exception as e:

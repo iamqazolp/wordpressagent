@@ -91,7 +91,18 @@ def get_site_by_name(db: Session, name: str) -> Site | None:
         logger.error(f"Lỗi khi lấy site theo name: {e}")
         return None
 
-def create_site(db: Session, name: str, url: str, client_key: str, client_secret: str, wp_user: str = '', wp_app_password: str = '') -> Site | None:
+def create_site(
+    db: Session,
+    name: str,
+    url: str,
+    client_key: str,
+    client_secret: str,
+    wp_user: str = '',
+    wp_app_password: str = '',
+    watermark_path: str = '',
+    watermark_position: str = 'bottom-right',
+    watermark_opacity: float = 0.7,
+) -> Site | None:
     try:
         site = Site(
             name=name,
@@ -99,7 +110,10 @@ def create_site(db: Session, name: str, url: str, client_key: str, client_secret
             client_key_encrypted=_encrypt(client_key),
             client_secret_encrypted=_encrypt(client_secret),
             wp_user=wp_user,
-            wp_app_password_encrypted=_encrypt(wp_app_password)
+            wp_app_password_encrypted=_encrypt(wp_app_password),
+            watermark_path=watermark_path,
+            watermark_position=watermark_position,
+            watermark_opacity=watermark_opacity,
         )
         db.add(site)
         db.commit()
@@ -162,7 +176,10 @@ def get_site_config(db: Session, site_id: int) -> dict | None:
         "client_key": _decrypt(site.client_key_encrypted),
         "client_secret": _decrypt(site.client_secret_encrypted),
         "wp_user": site.wp_user,
-        "wp_app_password": _decrypt(site.wp_app_password_encrypted)
+        "wp_app_password": _decrypt(site.wp_app_password_encrypted),
+        "watermark_path": getattr(site, "watermark_path", "") or "",
+        "watermark_position": getattr(site, "watermark_position", "bottom-right") or "bottom-right",
+        "watermark_opacity": getattr(site, "watermark_opacity", 0.7) if getattr(site, "watermark_opacity", None) is not None else 0.7,
     }
 
 def get_all_site_configs(db: Session) -> dict[str, dict]:
@@ -175,7 +192,10 @@ def get_all_site_configs(db: Session) -> dict[str, dict]:
             "client_key": _decrypt(site.client_key_encrypted),
             "client_secret": _decrypt(site.client_secret_encrypted),
             "wp_user": site.wp_user,
-            "wp_app_password": _decrypt(site.wp_app_password_encrypted)
+            "wp_app_password": _decrypt(site.wp_app_password_encrypted),
+            "watermark_path": getattr(site, "watermark_path", "") or "",
+            "watermark_position": getattr(site, "watermark_position", "bottom-right") or "bottom-right",
+            "watermark_opacity": getattr(site, "watermark_opacity", 0.7) if getattr(site, "watermark_opacity", None) is not None else 0.7,
         }
     return configs
 

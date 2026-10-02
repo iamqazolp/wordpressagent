@@ -107,7 +107,17 @@ def run_pipeline_ui(product_name, image_files, extra_urls_text, user_notes_text,
         db.close()
 
 
-def publish_to_sites_ui(articles_state, image_files, post_status, post_type, regular_price="", sale_price="", progress=gr.Progress()):
+def publish_to_sites_ui(
+    articles_state,
+    image_files,
+    post_status,
+    post_type,
+    regular_price="",
+    sale_price="",
+    optimize_images: bool = True,
+    remove_bg: bool = False,
+    progress=gr.Progress(),
+):
     """
     Wrapper that calls core.pipeline.publish_articles().
     Also records PostHistory in DB for each result.
@@ -133,6 +143,8 @@ def publish_to_sites_ui(articles_state, image_files, post_status, post_type, reg
             regular_price=regular_price,
             sale_price=sale_price,
             progress_callback=lambda val, desc: progress(val, desc=desc),
+            optimize_images=optimize_images,
+            remove_bg=remove_bg,
         )
         
         # Ghi lại lịch sử đăng bài vào CSDL
@@ -177,10 +189,18 @@ def publish_to_sites_ui(articles_state, image_files, post_status, post_type, reg
         db.close()
 
 
-def save_draft_articles_ui(articles_state, image_files, post_type, regular_price="", sale_price=""):
+def save_draft_articles_ui(
+    articles_state,
+    image_files,
+    post_type,
+    regular_price="",
+    sale_price="",
+    optimize_images: bool = True,
+    remove_bg: bool = False,
+):
     """
     Lưu toàn bộ bài viết đã tạo vào hệ thống (bảng PostHistory) với trạng thái 'saved'.
-    Không bắt buộc phải đăng lên WooCommerce ngay.
+    Tự động tối ưu WebP và gắn watermark theo từng website nếu được chọn.
     """
     if not articles_state:
         return "❌ Chưa có nội dung bài viết nào để lưu! Hãy bấm '🚀 Tạo bài viết' trước."
@@ -193,7 +213,6 @@ def save_draft_articles_ui(articles_state, image_files, post_type, regular_price
     saved_count = 0
     try:
         image_paths = _extract_file_paths(image_files)
-        image_paths_json = json.dumps(image_paths, ensure_ascii=False)
         is_prod = 'product' in post_type.lower() or 'sản phẩm' in post_type.lower()
 
         for site_name, art in articles_state.items():
@@ -201,6 +220,30 @@ def save_draft_articles_ui(articles_state, image_files, post_type, regular_price
             if not site:
                 continue
 
+            site_image_paths = image_paths
+            # Tối ưu ảnh cho site này nếu có ảnh và bật cờ
+            if optimize_images and image_paths:
+                try:
+                    from core.image_processor import process_image_batch
+                    batch_res = process_image_batch(
+                        image_paths,
+                        options={
+                            "max_width": 1200,
+                            "max_height": 1200,
+                            "format": "WEBP",
+                            "quality": 85,
+                            "remove_bg": remove_bg,
+                            "watermark_path": site.watermark_path or None,
+                            "watermark_position": site.watermark_position or "bottom-right",
+                            "watermark_opacity": site.watermark_opacity or 0.7,
+                        },
+                    )
+                    site_image_paths = [r["output_path"] for r in batch_res if r.get("output_path")] or image_paths
+                except Exception as e:
+                    logger.warning(f"Lỗi tối ưu ảnh khi lưu nháp cho {site_name}: {e}")
+                    site_image_paths = image_paths
+
+            site_image_paths_json = json.dumps(site_image_paths, ensure_ascii=False)
             prod_name = art.get('product_name') or art.get('title', 'Sản phẩm')
             crud.create_post_history(
                 db,
@@ -213,7 +256,7 @@ def save_draft_articles_ui(articles_state, image_files, post_type, regular_price
                 short_description=art.get('short_description', ''),
                 regular_price=regular_price,
                 sale_price=sale_price,
-                image_paths_json=image_paths_json,
+                image_paths_json=site_image_paths_json,
             )
             saved_count += 1
 
@@ -221,6 +264,7 @@ def save_draft_articles_ui(articles_state, image_files, post_type, regular_price
         return (
             f"### 💾 Đã lưu thành công {saved_count} bài viết vào hệ thống!\n\n"
             f"- **Trạng thái:** `Đã lưu nháp trên Web` (chưa đẩy lên WordPress/WooCommerce).\n"
+            f"- **Hình ảnh:** Đã nạp danh sách {len(image_paths)} ảnh kèm tối ưu.\n"
             f"- **Bước tiếp theo:** Bạn có thể qua tab **📚 Kho Bài Viết & Lịch Sử** để xem lại danh sách, "
             f"chỉnh sửa bài viết hoặc bấm nút đăng lên website bất cứ khi nào bạn muốn."
         )
@@ -229,6 +273,56 @@ def save_draft_articles_ui(articles_state, image_files, post_type, regular_price
         return f"❌ Lỗi khi lưu bài viết: {str(e)}"
     finally:
         db.close()
+
+
+def handle_preview_processed_images(
+    image_files,
+    selected_site: str,
+    do_optimize: bool,
+    do_watermark: bool,
+    do_remove_bg: bool,
+) -> tuple:
+    """Xử lý thử nghiệm ảnh và hiển thị preview kèm báo cáo nén dung lượng."""
+    paths = _extract_file_paths(image_files)
+    if not paths:
+        return None, "❌ Vui lòng tải lên ít nhất 1 ảnh ở trên để xem trước."
+
+    from db.database import SessionLocal
+    from db import crud
+    from core.image_processor import process_image_batch, format_processing_summary
+
+    wm_path = None
+    wm_pos = "bottom-right"
+    wm_opacity = 0.7
+
+    if do_watermark and selected_site:
+        db = SessionLocal()
+        try:
+            site = crud.get_site_by_name(db, selected_site)
+            if site and site.watermark_path:
+                wm_path = site.watermark_path
+                wm_pos = site.watermark_position or "bottom-right"
+                wm_opacity = site.watermark_opacity or 0.7
+        finally:
+            db.close()
+
+    results = process_image_batch(
+        paths,
+        options={
+            "max_width": 1200 if do_optimize else 9999,
+            "max_height": 1200 if do_optimize else 9999,
+            "format": "WEBP" if do_optimize else "JPEG",
+            "quality": 85,
+            "remove_bg": do_remove_bg,
+            "watermark_path": wm_path if do_watermark else None,
+            "watermark_position": wm_pos,
+            "watermark_opacity": wm_opacity,
+        },
+    )
+
+    processed_paths = [r["output_path"] for r in results if r.get("output_path")]
+    summary_md = format_processing_summary(results)
+    return processed_paths if processed_paths else None, summary_md
 
 
 def schedule_post_ui(
@@ -394,6 +488,31 @@ def build_tab_create(db_session=None) -> dict:
                 file_count="multiple",
                 file_types=["image"],
             )
+
+            with gr.Accordion("🖼️ Tùy Chọn Tối Ưu Hình Ảnh (Phase 3)", open=False):
+                img_optimize_chk = gr.Checkbox(
+                    label="⚡ Chuẩn hóa & Nén WebP (max 1200px, giảm 60-80% dung lượng)",
+                    value=True,
+                )
+                img_watermark_chk = gr.Checkbox(
+                    label="🏷️ Tự động đóng dấu Watermark logo website",
+                    value=True,
+                    info="Lấy logo và vị trí đã cấu hình ở tab Quản Lý Website.",
+                )
+                img_remove_bg_chk = gr.Checkbox(
+                    label="✨ Tách nền sản phẩm (Xóa phông rembg)",
+                    value=False,
+                    info="Chạy local trên máy (yêu cầu cài đặt rembg).",
+                )
+                btn_preview_images = gr.Button("👁️ Xử lý thử & Xem trước ảnh đã tối ưu", variant="secondary", size="sm")
+                processed_images_gallery = gr.Gallery(
+                    label="Xem trước ảnh sau khi tối ưu & đóng watermark",
+                    columns=4,
+                    rows=1,
+                    height=130,
+                    interactive=False,
+                )
+                img_process_summary = gr.Markdown("")
             extra_urls_input = gr.Textbox(
                 label="🔗 URL tham khảo thêm (tùy chọn)",
                 placeholder="Mỗi URL một dòng\nhttps://example.com/bai-viet-1",
@@ -506,6 +625,22 @@ def build_tab_create(db_session=None) -> dict:
         schedule_btn = gr.Button("⏰ Xác nhận Lên Lịch Đăng", variant="primary", size="lg")
         schedule_result = gr.Markdown()
 
+    # Sự kiện xem trước ảnh đã tối ưu & đóng watermark
+    btn_preview_images.click(
+        fn=handle_preview_processed_images,
+        inputs=[
+            image_input,
+            preview_site_selector,
+            img_optimize_chk,
+            img_watermark_chk,
+            img_remove_bg_chk,
+        ],
+        outputs=[
+            processed_images_gallery,
+            img_process_summary,
+        ],
+    )
+
     return {
         'product_input': product_input,
         'image_input': image_input,
@@ -535,5 +670,11 @@ def build_tab_create(db_session=None) -> dict:
         'schedule_val': schedule_val,
         'schedule_btn': schedule_btn,
         'schedule_result': schedule_result,
+        'img_optimize_chk': img_optimize_chk,
+        'img_watermark_chk': img_watermark_chk,
+        'img_remove_bg_chk': img_remove_bg_chk,
+        'btn_preview_images': btn_preview_images,
+        'processed_images_gallery': processed_images_gallery,
+        'img_process_summary': img_process_summary,
     }
 

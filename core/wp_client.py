@@ -13,16 +13,25 @@ import requests
 from requests.auth import HTTPBasicAuth
 from tenacity import retry, stop_after_attempt, wait_fixed
 
+from core.image_processor import process_single_image, DEFAULT_PROCESSED_DIR
+
 logger = logging.getLogger(__name__)
 
 
-def upload_images(image_paths: list[str], site_config: dict) -> list[dict]:
+def upload_images(
+    image_paths: list[str],
+    site_config: dict,
+    optimize: bool = True,
+    remove_bg: bool = False,
+) -> list[dict]:
     """
-    Upload nhiều ảnh lên WordPress Media Library.
+    Upload nhiều ảnh lên WordPress Media Library (Tự động tối ưu WebP & Watermark ở Phase 3).
 
     Args:
         image_paths:  Danh sách đường dẫn file ảnh trên máy.
-        site_config:  {"url": str, "client_key": str, "client_secret": str}
+        site_config:  {"url": str, "client_key": str, "client_secret": str, "watermark_path": ...}
+        optimize:     Có nén WebP và đóng watermark hay không.
+        remove_bg:    Có chạy thuật toán tách nền rembg hay không.
 
     Returns:
         List[{"id": int, "url": str, "filename": str}]
@@ -48,19 +57,49 @@ def upload_images(image_paths: list[str], site_config: dict) -> list[dict]:
             logger.warning(f"File không tồn tại: {path_str}")
             continue
 
-        mime_type, _ = mimetypes.guess_type(str(path))
+        upload_path = path
+
+        # Tối ưu hóa ảnh (WebP + Watermark) nếu bật cờ optimize
+        if optimize:
+            try:
+                proc_res = process_single_image(
+                    input_path=path,
+                    output_dir=DEFAULT_PROCESSED_DIR,
+                    options={
+                        "max_width": 1200,
+                        "max_height": 1200,
+                        "format": "WEBP",
+                        "quality": 85,
+                        "remove_bg": remove_bg,
+                        "watermark_path": site_config.get("watermark_path") or None,
+                        "watermark_position": site_config.get("watermark_position", "bottom-right"),
+                        "watermark_opacity": float(site_config.get("watermark_opacity", 0.7) or 0.7),
+                    },
+                )
+                if proc_res.get("success") and proc_res.get("output_path"):
+                    upload_path = Path(proc_res["output_path"])
+                    logger.info(
+                        f"✓ Tối ưu ảnh trước khi upload: {path.name} → {upload_path.name} "
+                        f"({proc_res.get('original_size_kb')}KB → {proc_res.get('processed_size_kb')}KB, "
+                        f"giảm {proc_res.get('saved_percent')}%)"
+                    )
+            except Exception as e:
+                logger.warning(f"Không thể tối ưu ảnh {path.name}, tiếp tục với ảnh gốc: {e}")
+                upload_path = path
+
+        mime_type, _ = mimetypes.guess_type(str(upload_path))
         if not mime_type:
             mime_type = "image/jpeg"
 
-        logger.info(f"Đang upload: {path.name}")
+        logger.info(f"Đang upload: {upload_path.name}")
 
         try:
-            with open(path, "rb") as f:
+            with open(upload_path, "rb") as f:
                 response = requests.post(
                     endpoint,
                     auth=auth,
                     headers={
-                        "Content-Disposition": f'attachment; filename="{path.name}"',
+                        "Content-Disposition": f'attachment; filename="{upload_path.name}"',
                         "Content-Type": mime_type,
                     },
                     data=f,

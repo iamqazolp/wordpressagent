@@ -32,4 +32,7 @@ apscheduler>=3.10.0
 
 # Utils
 python-dotenv>=1.0.0
+
+# Image Processing (Phase 3)
 Pillow>=10.0.0
+# rembg>=2.0.50  # Tùy chọn: cài đặt khi muốn dùng tính năng tách nền AI local (pip install rembg)

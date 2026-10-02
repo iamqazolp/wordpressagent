@@ -98,6 +98,8 @@ def publish_articles(
     regular_price: str = "",
     sale_price: str = "",
     progress_callback: Callable[[float, str], None] | None = None,
+    optimize_images: bool = True,
+    remove_bg: bool = False,
 ) -> list[dict]:
     """
     Publish articles to WordPress sites.
@@ -122,7 +124,12 @@ def publish_articles(
         if image_paths:
             if site_config.get('wp_user') and site_config.get('wp_app_password'):
                 try:
-                    uploaded = wp_client.upload_images(image_paths, site_config)
+                    uploaded = wp_client.upload_images(
+                        image_paths,
+                        site_config,
+                        optimize=optimize_images,
+                        remove_bg=remove_bg,
+                    )
                     if not uploaded:
                         image_warning = "Tải ảnh thất bại (vui lòng kiểm tra lại quyền WordPress Application Password)."
                 except Exception as e:

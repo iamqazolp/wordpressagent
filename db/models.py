@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey, Float
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 
@@ -16,6 +16,9 @@ class Site(Base):
     client_secret_encrypted = Column(String(500), default="")
     wp_user = Column(String(100), default="")
     wp_app_password_encrypted = Column(String(500), default="")
+    watermark_path = Column(String(500), default="", nullable=True)
+    watermark_position = Column(String(50), default="bottom-right", nullable=True)
+    watermark_opacity = Column(Float, default=0.7, nullable=True)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 

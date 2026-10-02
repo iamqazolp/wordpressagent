@@ -13,7 +13,7 @@ from ui.tab_templates import (
     build_tab_templates, handle_save_template, handle_delete_template
 )
 from ui.tab_sites import (
-    build_tab_sites, handle_save_site, handle_delete_site, handle_test_connection_ui, on_select_site_for_edit
+    build_tab_sites, handle_save_site, handle_delete_site, handle_test_connection_ui, on_select_site_for_edit, handle_clear_watermark
 )
 from ui.tab_history import (
     build_tab_history, fetch_history_data, get_history_post_choices, on_select_history_post
@@ -167,8 +167,8 @@ def create_app() -> gr.Blocks:
             history_comps['images_upload'],
         ]
 
-        def _on_publish_and_sync(art_state, imgs, p_status, p_type, r_price, s_price, s_filter, st_filter):
-            msg = publish_to_sites_ui(art_state, imgs, p_status, p_type, r_price, s_price)
+        def _on_publish_and_sync(art_state, imgs, p_status, p_type, r_price, s_price, opt_img, rem_bg, s_filter, st_filter):
+            msg = publish_to_sites_ui(art_state, imgs, p_status, p_type, r_price, s_price, optimize_images=opt_img, remove_bg=rem_bg)
             df = fetch_history_data(s_filter, st_filter)
             choices = get_history_post_choices(s_filter, st_filter)
             new_val = choices[0] if choices else None
@@ -183,6 +183,8 @@ def create_app() -> gr.Blocks:
                 create_comps['post_type_selector'],
                 create_comps['regular_price_input'],
                 create_comps['sale_price_input'],
+                create_comps['img_optimize_chk'],
+                create_comps['img_remove_bg_chk'],
                 history_comps['site_filter'],
                 history_comps['status_filter'],
             ],
@@ -198,8 +200,8 @@ def create_app() -> gr.Blocks:
             outputs=history_detail_outputs,
         )
 
-        def _on_save_draft_and_sync(art_state, imgs, p_type, r_price, s_price, s_filter, st_filter):
-            msg = save_draft_articles_ui(art_state, imgs, p_type, r_price, s_price)
+        def _on_save_draft_and_sync(art_state, imgs, p_type, r_price, s_price, opt_img, rem_bg, s_filter, st_filter):
+            msg = save_draft_articles_ui(art_state, imgs, p_type, r_price, s_price, optimize_images=opt_img, remove_bg=rem_bg)
             df = fetch_history_data(s_filter, st_filter)
             choices = get_history_post_choices(s_filter, st_filter)
             new_val = choices[0] if choices else None
@@ -213,6 +215,8 @@ def create_app() -> gr.Blocks:
                 create_comps['post_type_selector'],
                 create_comps['regular_price_input'],
                 create_comps['sale_price_input'],
+                create_comps['img_optimize_chk'],
+                create_comps['img_remove_bg_chk'],
                 history_comps['site_filter'],
                 history_comps['status_filter'],
             ],
@@ -317,24 +321,30 @@ def create_app() -> gr.Blocks:
                 sites_comps['input_client_secret'],
                 sites_comps['input_wp_user'],
                 sites_comps['input_wp_pass'],
+                sites_comps['input_watermark_pos'],
+                sites_comps['input_watermark_opacity'],
+                sites_comps['current_watermark_preview'],
+                sites_comps['input_watermark_file'],
                 sites_comps['manage_status'],
             ],
         )
 
-        def _sync_sites_on_save(name, url, key, secret, user, pwd, current_sel):
-            status_msg, table_md, edit_dd, create_cb = handle_save_site(name, url, key, secret, user, pwd, current_sel)
+        def _sync_sites_on_save(name, url, key, secret, user, pwd, wm_file, wm_pos, wm_opacity, current_sel):
+            status_msg, table_md, edit_dd, create_cb, wm_preview, wm_input = handle_save_site(
+                name, url, key, secret, user, pwd, wm_file, wm_pos, wm_opacity, current_sel
+            )
             # gr.update() trả về dict, không phải component → dùng dict access
             cb_choices = create_cb.get("choices", []) if isinstance(create_cb, dict) else []
             cb_value = create_cb.get("value", []) if isinstance(create_cb, dict) else []
             bulk_cb = gr.update(choices=cb_choices, value=cb_value)
-            return status_msg, table_md, edit_dd, create_cb, bulk_cb
+            return status_msg, table_md, edit_dd, create_cb, bulk_cb, wm_preview, wm_input
 
         def _sync_sites_on_delete(current_sel):
-            status_msg, table_md, edit_dd, create_cb = handle_delete_site(current_sel)
+            status_msg, table_md, edit_dd, create_cb, wm_preview = handle_delete_site(current_sel)
             cb_choices = create_cb.get("choices", []) if isinstance(create_cb, dict) else []
             cb_value = create_cb.get("value", []) if isinstance(create_cb, dict) else []
             bulk_cb = gr.update(choices=cb_choices, value=cb_value)
-            return status_msg, table_md, edit_dd, create_cb, bulk_cb
+            return status_msg, table_md, edit_dd, create_cb, bulk_cb, wm_preview
 
         sites_comps['btn_save_site'].click(
             fn=_sync_sites_on_save,
@@ -345,6 +355,9 @@ def create_app() -> gr.Blocks:
                 sites_comps['input_client_secret'],
                 sites_comps['input_wp_user'],
                 sites_comps['input_wp_pass'],
+                sites_comps['input_watermark_file'],
+                sites_comps['input_watermark_pos'],
+                sites_comps['input_watermark_opacity'],
                 sites_comps['site_select_edit'],
             ],
             outputs=[
@@ -353,6 +366,8 @@ def create_app() -> gr.Blocks:
                 sites_comps['site_select_edit'],
                 create_comps['sites_selector'],
                 bulk_comps['sites_selector'],
+                sites_comps['current_watermark_preview'],
+                sites_comps['input_watermark_file'],
             ],
         )
 
@@ -365,6 +380,17 @@ def create_app() -> gr.Blocks:
                 sites_comps['site_select_edit'],
                 create_comps['sites_selector'],
                 bulk_comps['sites_selector'],
+                sites_comps['current_watermark_preview'],
+            ],
+        )
+
+        sites_comps['btn_clear_watermark'].click(
+            fn=handle_clear_watermark,
+            inputs=[sites_comps['site_select_edit']],
+            outputs=[
+                sites_comps['manage_status'],
+                sites_comps['current_watermark_preview'],
+                sites_comps['sites_table_view'],
             ],
         )
 

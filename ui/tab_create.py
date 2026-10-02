@@ -1,7 +1,15 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
+from pathlib import Path
+from PIL import Image
 import gradio as gr
+
+from core.image_processor import (
+    process_image_batch,
+    format_processing_summary,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -323,6 +331,9 @@ def handle_preview_processed_images(
     processed_paths = [r["output_path"] for r in results if r.get("output_path")]
     summary_md = format_processing_summary(results)
     return processed_paths if processed_paths else None, summary_md
+
+
+
 
 
 def schedule_post_ui(

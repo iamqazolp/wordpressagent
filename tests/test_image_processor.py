@@ -155,6 +155,46 @@ def test_process_image_batch_and_summary():
         assert "Giảm" in summary
 
 
+def test_interactive_studio_tools():
+    """Test các chức năng chỉnh sửa tương tác: crop ratio with offset_pct, rotate, flip, resize."""
+    from core.image_processor import (
+        crop_image_ratio,
+        rotate_image,
+        flip_image,
+        resize_dimensions,
+    )
+
+    # 1. Test crop ratios with offset_pct
+    base = Image.new("RGB", (1200, 600), color="blue")
+    crop_1_1_center = crop_image_ratio(base, "1:1", offset_pct=0.5)
+    assert crop_1_1_center.size == (600, 600)
+
+    crop_1_1_left = crop_image_ratio(base, "1:1", offset_pct=0.0)
+    assert crop_1_1_left.size == (600, 600)
+
+    crop_1_1_right = crop_image_ratio(base, "1:1", offset_pct=1.0)
+    assert crop_1_1_right.size == (600, 600)
+
+    crop_4_3 = crop_image_ratio(base, "4:3", offset_pct=0.5)
+    assert crop_4_3.size == (800, 600)
+
+    crop_16_9 = crop_image_ratio(base, "16:9", offset_pct=0.5)
+    assert crop_16_9.width == int(600 * 16 / 9)
+    assert crop_16_9.height == 600
+
+    # 2. Test rotate
+    rot = rotate_image(base, 90)
+    assert rot.size == (600, 1200)
+
+    # 3. Test flip
+    flipped = flip_image(base, horizontal=True)
+    assert flipped.size == base.size
+
+    # 4. Test resize_dimensions
+    resized = resize_dimensions(base, 800, 800)
+    assert resized.size == (800, 800)
+
+
 if __name__ == "__main__":
     print("Running tests manually...")
     test_optimize_and_resize()
@@ -167,4 +207,6 @@ if __name__ == "__main__":
     print("✓ test_process_single_image_to_webp passed")
     test_process_image_batch_and_summary()
     print("✓ test_process_image_batch_and_summary passed")
+    test_interactive_studio_tools()
+    print("✓ test_interactive_studio_tools passed")
     print("\n🎉 ALL TESTS PASSED!")

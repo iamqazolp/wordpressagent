@@ -188,6 +188,100 @@ def apply_watermark(
         return base_img, False
 
 
+def crop_image_ratio(img: Image.Image, ratio: str = "1:1", offset_pct: float = 0.5) -> Image.Image:
+    """
+    Cắt ảnh theo các tỷ lệ tiêu chuẩn TMĐT (1:1, 4:3, 16:9, 3:4) với vị trí vùng cắt tùy biến:
+    - ratio: "1:1", "4:3", "16:9", "3:4"
+    - offset_pct: Vị trí dịch chuyển vùng cắt:
+        0.0 = Cạnh Trái (nếu ảnh ngang) / Cạnh Trên (nếu ảnh dọc)
+        0.5 = Chính giữa (mặc định)
+        1.0 = Cạnh Phải (nếu ảnh ngang) / Cạnh Dưới (nếu ảnh dọc)
+    """
+    w, h = img.size
+    ratio_parts = ratio.split(":")
+    if len(ratio_parts) != 2:
+        return img
+
+    try:
+        rw = float(ratio_parts[0])
+        rh = float(ratio_parts[1])
+        target_r = rw / rh
+    except ValueError:
+        return img
+
+    curr_r = w / h
+    if abs(curr_r - target_r) < 0.005:
+        return img
+
+    offset = max(0.0, min(1.0, float(offset_pct)))
+
+    if curr_r > target_r:
+        # Ảnh rộng hơn tỷ lệ mong muốn -> cắt bớt 2 bên (hoặc theo offset)
+        new_w = max(1, int(h * target_r))
+        slack = w - new_w
+        left = int(slack * offset)
+        return img.crop((left, 0, left + new_w, h))
+    else:
+        # Ảnh cao hơn tỷ lệ mong muốn -> cắt bớt trên dưới (hoặc theo offset)
+        new_h = max(1, int(w / target_r))
+        slack = h - new_h
+        top = int(slack * offset)
+        return img.crop((0, top, w, top + new_h))
+
+
+def rotate_image(img: Image.Image, angle: int = 90) -> Image.Image:
+    """Xoay ảnh theo góc 90 độ cùng chiều kim đồng hồ."""
+    return img.rotate(-angle, expand=True)
+
+
+def flip_image(img: Image.Image, horizontal: bool = True) -> Image.Image:
+    """Lật ảnh (ngang hoặc dọc)."""
+    if horizontal:
+        return ImageOps.mirror(img)
+    return ImageOps.flip(img)
+
+
+def resize_dimensions(img: Image.Image, width: int, height: int, keep_aspect: bool = False) -> Image.Image:
+    """Đổi kích thước ảnh theo độ phân giải mong muốn."""
+    width = max(10, width)
+    height = max(10, height)
+    if keep_aspect:
+        img_copy = img.copy()
+        img_copy.thumbnail((width, height), Image.Resampling.LANCZOS)
+        return img_copy
+    return img.resize((width, height), Image.Resampling.LANCZOS)
+
+
+def extract_image_from_editor(editor_data: Any) -> Image.Image | None:
+    """Trích xuất ảnh PIL an toàn từ dữ liệu trả về của gr.ImageEditor."""
+    if editor_data is None:
+        return None
+    if isinstance(editor_data, Image.Image):
+        return editor_data
+    if isinstance(editor_data, str) and Path(editor_data).exists():
+        try:
+            return Image.open(editor_data)
+        except Exception:
+            return None
+    if isinstance(editor_data, dict):
+        comp = editor_data.get("composite") or editor_data.get("background")
+        if comp is not None:
+            if isinstance(comp, Image.Image):
+                return comp
+            if isinstance(comp, str) and Path(comp).exists():
+                try:
+                    return Image.open(comp)
+                except Exception:
+                    pass
+            try:
+                import numpy as np
+                if isinstance(comp, np.ndarray):
+                    return Image.fromarray(comp)
+            except Exception:
+                pass
+    return None
+
+
 def process_single_image(
     input_path: str | Path,
     output_dir: str | Path | None = None,

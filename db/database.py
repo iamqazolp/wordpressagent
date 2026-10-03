@@ -31,6 +31,29 @@ def get_db():
     finally:
         db.close()
 
+def _backup_db_file(tag: str = "manual") -> Path | None:
+    """Sao lưu DB bằng sqlite3 backup API (an toàn khi app đang chạy). Giữ tối đa 10 bản gần nhất."""
+    import sqlite3
+    from datetime import datetime
+
+    if not DB_PATH.exists():
+        return None
+    backup_dir = DATA_DIR / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    dest = backup_dir / f"wordpress_agent_{tag}_{datetime.now():%Y%m%d_%H%M%S}.db"
+    src = sqlite3.connect(str(DB_PATH))
+    dst = sqlite3.connect(str(dest))
+    try:
+        src.backup(dst)
+    finally:
+        dst.close()
+        src.close()
+    for old in sorted(backup_dir.glob("wordpress_agent_*.db"), key=lambda p: p.stat().st_mtime)[:-10]:
+        old.unlink(missing_ok=True)
+    logger.info(f"Đã sao lưu DB: {dest}")
+    return dest
+
+
 def init_db():
     from db.models import Base
     from db.crud import seed_default_templates, migrate_from_json
@@ -39,38 +62,16 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     logger.info(f"Initialized database at {DB_PATH}")
 
-    # Ensure schema migrations
-    try:
-        import sqlite3
-        conn = sqlite3.connect(str(DB_PATH))
-        c = conn.cursor()
-        c.execute("PRAGMA table_info(post_history)")
-        cols = [r[1] for r in c.fetchall()]
-        for col_name, col_type in [
-            ("short_description", "TEXT"),
-            ("regular_price", "VARCHAR(50)"),
-            ("sale_price", "VARCHAR(50)"),
-            ("image_paths_json", "TEXT")
-        ]:
-            if col_name not in cols:
-                c.execute(f"ALTER TABLE post_history ADD COLUMN {col_name} {col_type}")
+    # Versioned schema migrations (xem db/migrations.py). Lỗi migration sẽ dừng app, không bỏ qua im lặng.
+    from db.migrations import MIGRATIONS, run_migrations, get_schema_version
 
-        # Ensure schema migrations cho bảng sites (Watermark Phase 3)
-        c.execute("PRAGMA table_info(sites)")
-        site_cols = [r[1] for r in c.fetchall()]
-        for col_name, col_type in [
-            ("watermark_path", "VARCHAR(500) DEFAULT ''"),
-            ("watermark_position", "VARCHAR(50) DEFAULT 'bottom-right'"),
-            ("watermark_opacity", "FLOAT DEFAULT 0.7")
-        ]:
-            if col_name not in site_cols:
-                c.execute(f"ALTER TABLE sites ADD COLUMN {col_name} {col_type}")
-
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        logger.warning(f"Lỗi kiểm tra migration cột: {e}")
+    with engine.connect() as conn:
+        has_pending = get_schema_version(conn) < max(m[0] for m in MIGRATIONS)
+    if has_pending and DB_PATH.exists():
+        _backup_db_file("pre-migration")
+    run_migrations(engine)
     
+
     # Seed default templates and migrate data
     db = SessionLocal()
     try:

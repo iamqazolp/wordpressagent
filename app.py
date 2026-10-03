@@ -76,14 +76,29 @@ def main():
     host = os.getenv("HOST", "127.0.0.1")
     port = int(os.getenv("PORT", "7860"))
 
+    # Bảo mật: share công khai và đăng nhập đều cấu hình qua .env, không hardcode.
+    share = os.getenv("APP_SHARE", "false").strip().lower() in ("1", "true", "yes", "on")
+    app_user = os.getenv("APP_USER", "").strip()
+    app_password = os.getenv("APP_PASSWORD", "").strip()
+    auth = (app_user, app_password) if app_user and app_password else None
+
+    if share and auth is None:
+        print("✗  APP_SHARE=true nhưng chưa đặt APP_USER/APP_PASSWORD trong .env.")
+        print("   Từ chối mở link công khai khi không có mật khẩu. Hãy đặt cả hai biến rồi chạy lại.")
+        sys.exit(1)
+    if auth is None and host not in ("127.0.0.1", "localhost"):
+        print(f"⚠  HOST={host} nhưng chưa đặt APP_USER/APP_PASSWORD — ai trong mạng cũng truy cập được.")
+    print(f"✓  Đăng nhập: {'bật' if auth else 'tắt'} | Link công khai: {'bật' if share else 'tắt'}")
+
     print(f"\n👉 Mở trình duyệt tại: http://{host}:{port}\n")
 
     demo.launch(
         server_name=host,
         server_port=port,
-        share=False,
-        inbrowser=True,
-        theme=gr.themes.Soft(primary_hue="blue"),                                                                                                                                              
+        share=share,
+        auth=auth,
+        inbrowser=os.getenv("APP_OPEN_BROWSER", "true").strip().lower() in ("1", "true", "yes", "on"),
+        theme=gr.themes.Soft(primary_hue="blue"),
     )
 
 

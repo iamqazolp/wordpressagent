@@ -39,3 +39,4 @@ tmp/
 temp/
 enter_spammer.py
 spam_enter.sh
+.gradio/

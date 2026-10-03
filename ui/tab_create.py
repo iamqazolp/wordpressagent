@@ -2,17 +2,18 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any
-from PIL import Image
 import gradio as gr
 
-from core.image_processor import (
-    process_image_batch,
-    format_processing_summary,
-)
-from core import taxonomy_service
+from core.image_processor import format_processing_summary
 from core.timeutil import now_vn, to_vn_naive, VN_TZ, TZ_LABEL, TZ_NAME
+from services import generation as generation_service
+from services import images as image_service
+from services import publishing as publishing_service
+from services import sites as site_service
+from services import templates as template_service
+from services.errors import ServiceError
+from ui.preview import make_preview_html
 from ui.common import extract_file_paths
 from ui.seo_panel import EMPTY_PANEL as EMPTY_SEO_PANEL
 
@@ -20,76 +21,39 @@ logger = logging.getLogger(__name__)
 
 def run_pipeline_ui(product_name, image_files, extra_urls_text, user_notes_text, selected_sites, randomize_enabled, template_choice, progress=gr.Progress()):
     """
-    Wrapper that calls core.pipeline.generate_articles().
-    Gets site configs from DB, gets template content from DB if selected.
-    Returns: (preview_dropdown, title, preview_html, articles_state, current_site, status_msg)
+    Wrapper that calls services.generation.generate_for_sites().
+    Returns: (preview_dropdown, title, short_description, preview_html, articles_state, current_site, status_msg)
     """
-    from db.database import SessionLocal
-    from db import crud
-    from core.pipeline import generate_articles
-    from ui.preview import make_preview_html
-    
     empty_dropdown = gr.Dropdown(choices=["(Chưa có bài viết)"], value="(Chưa có bài viết)")
-    if not product_name.strip():
-        return empty_dropdown, "", "", "", {}, "", "❌ Vui lòng nhập tên sản phẩm!"
-
-    if not selected_sites:
-        return empty_dropdown, "", "", "", {}, "", "❌ Vui lòng tích chọn ít nhất 1 website đăng bài!"
-
-    db = SessionLocal()
     try:
-        # Lấy cấu hình các site được chọn
-        all_configs = crud.get_all_site_configs(db)
-        selected_configs = {name: all_configs[name] for name in selected_sites if name in all_configs}
-        
-        # Lấy nội dung template nếu được chọn
-        template_content = None
-        if template_choice and template_choice != '(Mặc định)':
-            templates = crud.get_all_templates(db)
-            for t in templates:
-                if t.name == template_choice:
-                    template_content = t.content
-                    break
-        
-        # Chạy pipeline
         image_paths = extract_file_paths(image_files)
-        extra_urls = [u.strip() for u in extra_urls_text.splitlines() if u.strip()]
-        
-        articles = generate_articles(
+        articles = generation_service.generate_for_sites(
             product_name=product_name,
-            image_files=image_paths if image_paths else None,
-            extra_urls=extra_urls,
+            site_names=selected_sites,
+            image_paths=image_paths,
+            extra_urls=[u.strip() for u in extra_urls_text.splitlines() if u.strip()],
             user_notes=user_notes_text,
-            selected_sites=selected_configs,
-            randomize_enabled=randomize_enabled,
-            template_content=template_content,
-            progress_callback=lambda val, desc: progress(val, desc=desc),
+            randomize=randomize_enabled,
+            template_name=template_choice,
+            progress=lambda val, desc: progress(val, desc=desc),
         )
-        
-        if not articles:
-            return empty_dropdown, "", "", "", {}, "", "❌ Không tạo được bài viết nào."
 
-        # Thêm preview_html, product_name và short_description cho mỗi bài viết
-        import re
-        for site_name, art in articles.items():
+        # Bản xem trước (đường dẫn ảnh kiểu Gradio) chỉ là chuyện hiển thị nên làm ở lớp UI
+        for art in articles.values():
             art['preview_html'] = make_preview_html(art['raw_html'], image_paths)
-            art['product_name'] = product_name
-            # Tự động trích xuất bảng thông số kỹ thuật cho mô tả ngắn nếu có
-            table_match = re.search(r"(<table\b.*?>.*?</table>)", art['raw_html'], re.DOTALL | re.IGNORECASE)
-            art['short_description'] = table_match.group(1) if table_match else ""
-            
+
         # Dữ liệu cho trang xem trước đầu tiên
         first_site = list(articles.keys())[0]
         first_article = articles[first_site]
-        
+
         updated_dropdown = gr.Dropdown(
             choices=selected_sites,
             value=first_site,
             interactive=True,
         )
-        
+
         status_msg = f"✅ Đã tạo xong nội dung cho {len(selected_sites)} website! Bạn có thể chọn từng website ở ô bên dưới để xem trước hoặc chỉnh sửa trước khi đăng."
-        
+
         return (
             updated_dropdown,
             first_article.get("title", ""),
@@ -99,11 +63,11 @@ def run_pipeline_ui(product_name, image_files, extra_urls_text, user_notes_text,
             first_site,
             status_msg,
         )
+    except ServiceError as e:
+        return empty_dropdown, "", "", "", {}, "", f"❌ {e.message}"
     except Exception as e:
         logger.exception("Lỗi trong pipeline UI")
         return empty_dropdown, "", "", "", {}, "", f"❌ Lỗi: {str(e)}"
-    finally:
-        db.close()
 
 
 def publish_to_sites_ui(
@@ -118,78 +82,39 @@ def publish_to_sites_ui(
     progress=gr.Progress(),
 ):
     """
-    Wrapper that calls core.pipeline.publish_articles().
-    Also records PostHistory in DB for each result.
+    Wrapper that calls services.publishing.publish_and_record(): đăng lên các website và ghi PostHistory.
     """
     if not articles_state:
         return "❌ Chưa có nội dung bài viết nào để đăng! Hãy tạo bài viết trước."
-        
-    from db.database import SessionLocal
-    from db import crud
-    from core.pipeline import publish_articles
-    
-    db = SessionLocal()
-    try:
-        all_configs = crud.get_all_site_configs(db)
-        image_paths = extract_file_paths(image_files)
-        
-        results = publish_articles(
-            articles=articles_state,
-            image_files=image_paths,
-            site_configs=all_configs,
-            post_type=post_type,
-            post_status=post_status,
-            regular_price=regular_price,
-            sale_price=sale_price,
-            progress_callback=lambda val, desc: progress(val, desc=desc),
-            optimize_images=optimize_images,
-            remove_bg=remove_bg,
-        )
-        
-        # Ghi lại lịch sử đăng bài vào CSDL
-        import json
-        image_paths_json = json.dumps(image_paths, ensure_ascii=False)
-        for result in results:
-            site = crud.get_site_by_name(db, result['site_name'])
-            if site:
-                article = articles_state.get(result['site_name'], {})
-                prod_name = article.get('product_name') or article.get('title', '')
-                is_prod = 'product' in post_type.lower() or 'sản phẩm' in post_type.lower()
-                crud.create_post_history(
-                    db,
-                    site_id=site.id,
-                    product_name=prod_name,
-                    title=article.get('title', ''),
-                    raw_html=article.get('raw_html', ''),
-                    post_type='product' if is_prod else 'post',
-                    status='published' if result['success'] else 'failed',
-                    wp_post_id=str(result.get('post_id', '')) if result.get('post_id') else None,
-                    wp_post_url=result.get('post_url'),
-                    error_message=result.get('error'),
-                    short_description=article.get('short_description', ''),
-                    regular_price=regular_price,
-                    sale_price=sale_price,
-                    image_paths_json=image_paths_json,
-                    category_ids_json=json.dumps(taxonomy_service.effective_category_ids(article, post_type)),
-                    tags_json=json.dumps(article.get('tags') or [], ensure_ascii=False),
-                )
-        
-        # Định dạng kết quả thành markdown
-        report = ['### 📋 Kết Quả Đăng Bài:\n']
-        for r in results:
-            if r['success']:
-                status_lbl = '📝 Nháp' if r['status'] == 'draft' else '🟢 Công khai'
-                line = f"- **{r['site_name']}**: ✅ Thành công ({status_lbl}) | [Xem]({r['post_url']}) | [Sửa]({r['edit_url']})"
-                if r.get('image_warning'):
-                    line += f"\n  - ⚠️ *Lưu ý về hình ảnh:* {r['image_warning']}"
-                if r.get('taxonomy_warning'):
-                    line += f"\n  - ⚠️ *Lưu ý về tag:* {r['taxonomy_warning']}"
-                report.append(line)
-            else:
-                report.append(f"- **{r['site_name']}**: ❌ {r['error']}")
-        return '\n\n'.join(report)
-    finally:
-        db.close()
+
+    results = publishing_service.publish_and_record(
+        articles=articles_state,
+        image_paths=extract_file_paths(image_files),
+        post_type=post_type,
+        post_status=post_status,
+        regular_price=regular_price,
+        sale_price=sale_price,
+        optimize_images=optimize_images,
+        remove_bg=remove_bg,
+        progress=lambda val, desc: progress(val, desc=desc),
+    )
+
+    # Định dạng kết quả thành markdown
+    report = ['### 📋 Kết Quả Đăng Bài:\n']
+    for r in results:
+        if r['success']:
+            status_lbl = '📝 Nháp' if r['status'] == 'draft' else '🟢 Công khai'
+            line = f"- **{r['site_name']}**: ✅ Thành công ({status_lbl}) | [Xem]({r['post_url']}) | [Sửa]({r['edit_url']})"
+            if r.get('image_warning'):
+                line += f"\n  - ⚠️ *Lưu ý về hình ảnh:* {r['image_warning']}"
+            if r.get('taxonomy_warning'):
+                line += f"\n  - ⚠️ *Lưu ý về tag:* {r['taxonomy_warning']}"
+            if r.get('category_warning'):
+                line += f"\n  - ⚠️ *Lưu ý về danh mục:* {r['category_warning']}"
+            report.append(line)
+        else:
+            report.append(f"- **{r['site_name']}**: ❌ {r['error']}")
+    return '\n\n'.join(report)
 
 
 def save_draft_articles_ui(
@@ -208,76 +133,28 @@ def save_draft_articles_ui(
     if not articles_state:
         return "❌ Chưa có nội dung bài viết nào để lưu! Hãy bấm '🚀 Tạo bài viết' trước."
 
-    import json
-    from db.database import SessionLocal
-    from db import crud
-
-    db = SessionLocal()
-    saved_count = 0
     try:
-        image_paths = extract_file_paths(image_files)
-        is_prod = 'product' in post_type.lower() or 'sản phẩm' in post_type.lower()
-
-        for site_name, art in articles_state.items():
-            site = crud.get_site_by_name(db, site_name)
-            if not site:
-                continue
-
-            site_image_paths = image_paths
-            # Tối ưu ảnh cho site này nếu có ảnh và bật cờ
-            if optimize_images and image_paths:
-                try:
-                    from core.image_processor import process_image_batch
-                    batch_res = process_image_batch(
-                        image_paths,
-                        options={
-                            "max_width": 1200,
-                            "max_height": 1200,
-                            "format": "WEBP",
-                            "quality": 85,
-                            "remove_bg": remove_bg,
-                            "watermark_path": site.watermark_path or None,
-                            "watermark_position": site.watermark_position or "bottom-right",
-                            "watermark_opacity": site.watermark_opacity or 0.7,
-                        },
-                    )
-                    site_image_paths = [r["output_path"] for r in batch_res if r.get("output_path")] or image_paths
-                except Exception as e:
-                    logger.warning(f"Lỗi tối ưu ảnh khi lưu nháp cho {site_name}: {e}")
-                    site_image_paths = image_paths
-
-            site_image_paths_json = json.dumps(site_image_paths, ensure_ascii=False)
-            prod_name = art.get('product_name') or art.get('title', 'Sản phẩm')
-            crud.create_post_history(
-                db,
-                site_id=site.id,
-                product_name=prod_name,
-                title=art.get('title', ''),
-                raw_html=art.get('raw_html', ''),
-                post_type='product' if is_prod else 'post',
-                status='saved',
-                short_description=art.get('short_description', ''),
-                regular_price=regular_price,
-                sale_price=sale_price,
-                image_paths_json=site_image_paths_json,
-                category_ids_json=json.dumps(taxonomy_service.effective_category_ids(art, post_type)),
-                tags_json=json.dumps(art.get('tags') or [], ensure_ascii=False),
-            )
-            saved_count += 1
-
-        gr.Info(f"✅ Đã lưu {saved_count} bài viết vào hệ thống!")
-        return (
-            f"### 💾 Đã lưu thành công {saved_count} bài viết vào hệ thống!\n\n"
-            f"- **Trạng thái:** `Đã lưu nháp trên Web` (chưa đẩy lên WordPress/WooCommerce).\n"
-            f"- **Hình ảnh:** Đã nạp danh sách {len(image_paths)} ảnh kèm tối ưu.\n"
-            f"- **Bước tiếp theo:** Bạn có thể qua tab **📚 Kho Bài Viết & Lịch Sử** để xem lại danh sách, "
-            f"chỉnh sửa bài viết hoặc bấm nút đăng lên website bất cứ khi nào bạn muốn."
+        res = publishing_service.save_drafts(
+            articles_state,
+            extract_file_paths(image_files),
+            post_type,
+            regular_price,
+            sale_price,
+            optimize_images=optimize_images,
+            remove_bg=remove_bg,
         )
     except Exception as e:
         logger.exception("Lỗi khi lưu bài viết vào hệ thống")
         return f"❌ Lỗi khi lưu bài viết: {str(e)}"
-    finally:
-        db.close()
+
+    gr.Info(f"✅ Đã lưu {res.saved_count} bài viết vào hệ thống!")
+    return (
+        f"### 💾 Đã lưu thành công {res.saved_count} bài viết vào hệ thống!\n\n"
+        f"- **Trạng thái:** `Đã lưu nháp trên Web` (chưa đẩy lên WordPress/WooCommerce).\n"
+        f"- **Hình ảnh:** Đã nạp danh sách {res.image_count} ảnh kèm tối ưu.\n"
+        f"- **Bước tiếp theo:** Bạn có thể qua tab **📚 Kho Bài Viết & Lịch Sử** để xem lại danh sách, "
+        f"chỉnh sửa bài viết hoặc bấm nút đăng lên website bất cứ khi nào bạn muốn."
+    )
 
 
 def handle_preview_processed_images(
@@ -292,45 +169,10 @@ def handle_preview_processed_images(
     if not paths:
         return None, "❌ Vui lòng tải lên ít nhất 1 ảnh ở trên để xem trước."
 
-    from db.database import SessionLocal
-    from db import crud
-    from core.image_processor import process_image_batch, format_processing_summary
-
-    wm_path = None
-    wm_pos = "bottom-right"
-    wm_opacity = 0.7
-
-    if do_watermark and selected_site:
-        db = SessionLocal()
-        try:
-            site = crud.get_site_by_name(db, selected_site)
-            if site and site.watermark_path:
-                wm_path = site.watermark_path
-                wm_pos = site.watermark_position or "bottom-right"
-                wm_opacity = site.watermark_opacity or 0.7
-        finally:
-            db.close()
-
-    results = process_image_batch(
-        paths,
-        options={
-            "max_width": 1200 if do_optimize else 9999,
-            "max_height": 1200 if do_optimize else 9999,
-            "format": "WEBP" if do_optimize else "JPEG",
-            "quality": 85,
-            "remove_bg": do_remove_bg,
-            "watermark_path": wm_path if do_watermark else None,
-            "watermark_position": wm_pos,
-            "watermark_opacity": wm_opacity,
-        },
+    processed_paths, results = image_service.preview_processed(
+        paths, selected_site, do_optimize, do_watermark, do_remove_bg
     )
-
-    processed_paths = [r["output_path"] for r in results if r.get("output_path")]
-    summary_md = format_processing_summary(results)
-    return processed_paths if processed_paths else None, summary_md
-
-
-
+    return processed_paths if processed_paths else None, format_processing_summary(results)
 
 
 def parse_scheduled_datetime(val: Any) -> datetime | None:
@@ -527,7 +369,6 @@ def on_toggle_edit_mode(edit_mode_active, current_site, articles_state):
 def on_save_html_edit(new_html, current_site, articles_state, image_files):
     """Lưu mã HTML đã sửa vào articles_state và cập nhật lại bản preview."""
     if articles_state and current_site in articles_state:
-        from ui.preview import make_preview_html
         image_paths = extract_file_paths(image_files)
         articles_state[current_site]['raw_html'] = new_html
         articles_state[current_site]['preview_html'] = make_preview_html(new_html, image_paths)
@@ -537,17 +378,8 @@ def on_save_html_edit(new_html, current_site, articles_state, image_files):
 
 def build_tab_create(db_session=None) -> dict:
     """Build the create & publish tab. Returns all Gradio components that need external event wiring."""
-    from db.database import SessionLocal
-    from db import crud
-    
-    db = SessionLocal() if db_session is None else db_session
-    try:
-        site_names = crud.get_site_names(db)
-        templates = crud.get_all_templates(db)
-        template_choices = ['(Mặc định)'] + [t.name for t in templates]
-    finally:
-        if db_session is None:
-            db.close()
+    site_names = site_service.list_site_names()
+    template_choices = [template_service.DEFAULT_CHOICE] + template_service.list_template_names()
 
     with gr.Row():
         with gr.Column(scale=1):

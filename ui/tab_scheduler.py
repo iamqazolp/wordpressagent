@@ -1,71 +1,38 @@
 from __future__ import annotations
 
-import json
 import logging
 import pandas as pd
 import gradio as gr
-from datetime import datetime
 
-from db.database import SessionLocal
-from db import crud
-from core.scheduler import cancel_scheduled_job
-from core.timeutil import fmt_vn
+from services import schedules as sched_svc
 from ui import taxonomy_records as tr
 
 logger = logging.getLogger(__name__)
 
+_COLUMNS = [
+    "ID", "Sản phẩm", "Website", "Danh mục & Tag", "Thời gian hẹn (GMT+7)", "Trạng thái", "Thời gian chạy (GMT+7)", "Kết quả"
+]
+
 
 def fetch_scheduler_data() -> pd.DataFrame:
     """Truy vấn danh sách lịch đăng từ CSDL và định dạng thành DataFrame."""
-    db = SessionLocal()
     try:
-        jobs = crud.get_scheduled_posts(db, limit=100)
+        jobs = sched_svc.list_jobs(limit=100)
         if not jobs:
-            return pd.DataFrame(columns=[
-                "ID", "Sản phẩm", "Website", "Danh mục & Tag", "Thời gian hẹn (GMT+7)", "Trạng thái", "Thời gian chạy (GMT+7)", "Kết quả"
-            ])
-
-        rows = []
-        tax_cache: dict = {}  # tên danh mục theo (site, loại) — tránh truy vấn lặp cho từng dòng
-        for j in jobs:
-            # Parse sites
-            try:
-                sites = json.loads(j.site_names_json)
-                sites_str = ", ".join(sites)
-            except Exception:
-                sites_str = j.site_names_json or "-"
-
-            # Format status
-            status_map = {
-                "pending": "⏳ Đang chờ",
-                "running": "⚡ Đang đăng...",
-                "completed": "✅ Hoàn tất",
-                "partially_completed": "⚠️ Xong một phần",
-                "failed": "❌ Thất bại",
-                "cancelled": "🚫 Đã hủy",
-            }
-            status_display = status_map.get(j.status, j.status)
-
-            sched_time_str = fmt_vn(j.scheduled_time)
-            exec_time_str = fmt_vn(j.executed_at)
-
-            rows.append({
-                "ID": j.id,
-                "Sản phẩm": j.product_name,
-                "Website": sites_str,
-                "Danh mục & Tag": tr.summarize_job(db, j, tax_cache),
-                "Thời gian hẹn (GMT+7)": sched_time_str,
-                "Trạng thái": status_display,
-                "Thời gian chạy (GMT+7)": exec_time_str,
-                "Kết quả": j.result_message or "-",
-            })
-
-        return pd.DataFrame(rows)
-    except Exception as e:
+            return pd.DataFrame(columns=_COLUMNS)
+        return pd.DataFrame([{
+            "ID": j.id,
+            "Sản phẩm": j.product_name,
+            "Website": j.sites,
+            "Danh mục & Tag": j.taxonomy_summary,
+            "Thời gian hẹn (GMT+7)": j.scheduled_time,
+            "Trạng thái": j.status,
+            "Thời gian chạy (GMT+7)": j.executed_at,
+            "Kết quả": j.result_message,
+        } for j in jobs])
+    except Exception:
         logger.exception("Lỗi khi tải danh sách lịch đăng")
         return pd.DataFrame(columns=["Lỗi"])
-    finally:
-        db.close()
 
 
 def handle_cancel_job(job_id_input: str) -> tuple[pd.DataFrame, str]:
@@ -78,11 +45,9 @@ def handle_cancel_job(job_id_input: str) -> tuple[pd.DataFrame, str]:
     except ValueError:
         return fetch_scheduler_data(), "❌ ID phải là một số nguyên hợp lệ."
 
-    success = cancel_scheduled_job(job_id)
-    if success:
+    if sched_svc.cancel_job(job_id):
         return fetch_scheduler_data(), f"✅ Đã hủy lịch đăng #{job_id} thành công!"
-    else:
-        return fetch_scheduler_data(), f"❌ Không tìm thấy hoặc không thể hủy lịch đăng #{job_id}."
+    return fetch_scheduler_data(), f"❌ Không tìm thấy hoặc không thể hủy lịch đăng #{job_id}."
 
 
 def handle_delete_job(job_id_input: str) -> tuple[pd.DataFrame, str]:
@@ -95,17 +60,9 @@ def handle_delete_job(job_id_input: str) -> tuple[pd.DataFrame, str]:
     except ValueError:
         return fetch_scheduler_data(), "❌ ID phải là một số nguyên hợp lệ."
 
-    cancel_scheduled_job(job_id)
-
-    db = SessionLocal()
-    try:
-        deleted = crud.delete_scheduled_post(db, job_id)
-        if deleted:
-            return fetch_scheduler_data(), f"✅ Đã xóa vĩnh viễn lịch đăng #{job_id}!"
-        else:
-            return fetch_scheduler_data(), f"❌ Không tìm thấy lịch đăng #{job_id} để xóa."
-    finally:
-        db.close()
+    if sched_svc.delete_job(job_id):
+        return fetch_scheduler_data(), f"✅ Đã xóa vĩnh viễn lịch đăng #{job_id}!"
+    return fetch_scheduler_data(), f"❌ Không tìm thấy lịch đăng #{job_id} để xóa."
 
 
 def build_tab_scheduler() -> dict:

@@ -8,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 from db import crud
 from db.models import Base, PostHistory, ScheduledPost, Site
 from core.timeutil import now_vn
-from ui import taxonomy_panel as tp
+from services import taxonomy as tp
 from ui import taxonomy_records as tr
 from datetime import timedelta
 
@@ -42,8 +42,8 @@ def env(monkeypatch):
     s.commit()
     ids = (h.id, job.id)
     s.close()
-    for mod in (tr, tp):
-        monkeypatch.setattr(mod, "SessionLocal", Session)
+    from db import database
+    monkeypatch.setattr(database, "SessionLocal", Session)
     monkeypatch.setattr(crud, "get_site_config", lambda d, i: SITE_CFG)
     return Session, ids
 
@@ -191,8 +191,9 @@ def test_sched_ai_suggest_saves(env, monkeypatch):
 
 def test_scheduler_table_has_taxonomy_column(env, monkeypatch):
     Session, _ = env
+    from db import database
     from ui import tab_scheduler
-    monkeypatch.setattr(tab_scheduler, "SessionLocal", Session)
+    monkeypatch.setattr(database, "SessionLocal", Session)
     df = tab_scheduler.fetch_scheduler_data()
     assert "Danh mục & Tag" in df.columns
     assert df.iloc[0]["Danh mục & Tag"] == "📂 Quạt · 🏷️ a"

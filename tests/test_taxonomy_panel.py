@@ -6,6 +6,7 @@ from sqlalchemy.pool import StaticPool
 from core import taxonomy_service, wp_client
 from db import crud
 from db.models import Base, Site
+from services import taxonomy as svc
 from ui import taxonomy_panel as tp
 
 SITE_CFG = {"url": "https://shop.example.com", "client_key": "k", "client_secret": "s", "wp_user": "", "wp_app_password": ""}
@@ -27,7 +28,8 @@ def env(monkeypatch):
     ])
     crud.replace_site_categories(seed, site_id, "post", [{"id": 50, "name": "Tin tức", "parent": 0}])
     seed.close()
-    monkeypatch.setattr(tp, "SessionLocal", Session)
+    from db import database
+    monkeypatch.setattr(database, "SessionLocal", Session)
     monkeypatch.setattr(crud, "get_site_config", lambda d, i: SITE_CFG)
     return Session
 
@@ -86,7 +88,7 @@ def test_ai_suggest_writes_validated_result(env, monkeypatch):
         seen["cats"] = [c["id"] for c in cats]
         return {"category_ids": [2], "tags": ["quạt hút"]}
 
-    monkeypatch.setattr(tp, "suggest_taxonomy", fake_suggest)
+    monkeypatch.setattr(svc, "suggest_taxonomy", fake_suggest)
     st = state()
     new_state, drop, tags, status = tp.on_ai_suggest(st, "shop", "product")
     assert sorted(seen["cats"]) == [1, 2]
@@ -96,7 +98,7 @@ def test_ai_suggest_writes_validated_result(env, monkeypatch):
 
 
 def test_ai_suggest_failure_leaves_selection_untouched(env, monkeypatch):
-    monkeypatch.setattr(tp, "suggest_taxonomy", lambda *a: {"category_ids": [], "tags": [], "error": "hết hạn mức"})
+    monkeypatch.setattr(svc, "suggest_taxonomy", lambda *a: {"category_ids": [], "tags": [], "error": "hết hạn mức"})
     st = state(category_ids=[1], category_scope="product", tags=["giữ nguyên"])
     new_state, drop, tags, status = tp.on_ai_suggest(st, "shop", "product")
     assert new_state["shop"]["category_ids"] == [1] and new_state["shop"]["tags"] == ["giữ nguyên"]
@@ -105,7 +107,7 @@ def test_ai_suggest_failure_leaves_selection_untouched(env, monkeypatch):
 
 def test_autofill_skips_sites_with_selection_and_never_raises(env, monkeypatch):
     calls = []
-    monkeypatch.setattr(tp, "suggest_taxonomy", lambda title, *a: calls.append(title) or {"category_ids": [1], "tags": ["t1"]})
+    monkeypatch.setattr(svc, "suggest_taxonomy", lambda title, *a: calls.append(title) or {"category_ids": [1], "tags": ["t1"]})
     st = {
         "shop": {"title": "A", "raw_html": "", "short_description": ""},
         "keep": {"title": "B", "raw_html": "", "tags": ["đã chọn"]},
@@ -114,7 +116,7 @@ def test_autofill_skips_sites_with_selection_and_never_raises(env, monkeypatch):
     assert out["shop"]["category_ids"] == [1] and out["shop"]["tags"] == ["t1"]
     assert out["keep"]["tags"] == ["đã chọn"] and calls == ["A"]
 
-    monkeypatch.setattr(tp, "_suggest_for_site", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(svc, "_suggest_for_site", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
     assert tp.autofill_taxonomy({"shop": {"title": "A"}}, "product") == {"shop": {"title": "A"}}
     assert tp.autofill_taxonomy({}, "product") == {}
 
@@ -124,7 +126,7 @@ def test_autofill_uses_cache_without_network(env, monkeypatch):
         raise AssertionError("không được gọi mạng khi đã có cache")
 
     monkeypatch.setattr(wp_client, "fetch_categories", no_network)
-    monkeypatch.setattr(tp, "suggest_taxonomy", lambda *a: {"category_ids": [1], "tags": []})
+    monkeypatch.setattr(svc, "suggest_taxonomy", lambda *a: {"category_ids": [1], "tags": []})
     st = {"shop": {"title": "A", "raw_html": "", "short_description": ""}}
     assert tp.autofill_taxonomy(st, "product")["shop"]["category_ids"] == [1]
 

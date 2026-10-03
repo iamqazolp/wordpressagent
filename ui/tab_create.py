@@ -10,6 +10,7 @@ from core.timeutil import now_vn, to_vn_naive, VN_TZ, TZ_LABEL, TZ_NAME
 from services import generation as generation_service
 from services import images as image_service
 from services import publishing as publishing_service
+from services import schedules as schedule_service
 from services import sites as site_service
 from services import templates as template_service
 from services.errors import ServiceError
@@ -266,49 +267,37 @@ def schedule_post_ui(
     if not articles_state:
         return "❌ Chưa có nội dung bài viết nào để lên lịch! Hãy tạo bài viết trước."
 
-    from core.scheduler import schedule_publish_job
-
-    now = now_vn()
     target_time = parse_scheduled_datetime(scheduled_datetime)
     if not target_time:
         return "❌ Vui lòng chọn ngày và giờ đăng bài hợp lệ."
 
-    if target_time <= now:
-        return f"❌ Thời gian hẹn ({target_time.strftime('%d/%m/%Y %H:%M')} {TZ_LABEL}) phải ở trong tương lai (sau hiện tại: {now.strftime('%d/%m/%Y %H:%M')} {TZ_LABEL})."
-
-    image_paths = extract_file_paths(image_files)
-    first_site = list(articles_state.keys())[0]
-    prod_name = articles_state[first_site].get("product_name") or articles_state[first_site].get("title", "Sản phẩm")
-
     try:
-        job_id = schedule_publish_job(
-            product_name=prod_name,
+        res = schedule_service.schedule_post(
             articles=articles_state,
-            site_names=list(articles_state.keys()),
-            scheduled_time=target_time,
-            post_type=post_type,
+            image_paths=extract_file_paths(image_files),
             post_status=post_status,
+            post_type=post_type,
+            scheduled_time=target_time,
             regular_price=regular_price,
             sale_price=sale_price,
-            image_files=image_paths,
         )
-
-        sites_count = len(articles_state)
-        weekday_names = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"]
-        weekday = weekday_names[target_time.weekday()]
-        return (
-            f"### ⏰ Đặt Lịch Đăng Thành Công!\n"
-            f"- **Mã lịch hẹn (Job ID):** `#{job_id}`\n"
-            f"- **Sản phẩm:** {prod_name}\n"
-            f"- **Thời gian đăng dự kiến:** `{target_time.strftime('%H:%M')} ({TZ_LABEL}) - {weekday}, ngày {target_time.strftime('%d/%m/%Y')}`\n"
-            f"- **Áp dụng cho:** {sites_count} website ({', '.join(articles_state.keys())})\n"
-            f"- **Trạng thái:** Sẽ tự động đăng dưới dạng `{post_status}`\n\n"
-            f"👉 *Bạn có thể theo dõi tiến độ hoặc hủy lịch bất kỳ lúc nào tại tab **📅 Lịch Đăng Bài**.*"
-        )
+    except ServiceError as e:
+        return f"❌ {e}"
     except Exception as e:
         logger.exception("Lỗi khi lên lịch đăng bài")
         return f"❌ Có lỗi xảy ra khi lên lịch đăng: {str(e)}"
 
+    weekday_names = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"]
+    weekday = weekday_names[res.scheduled_time.weekday()]
+    return (
+        f"### ⏰ Đặt Lịch Đăng Thành Công!\n"
+        f"- **Mã lịch hẹn (Job ID):** `#{res.job_id}`\n"
+        f"- **Sản phẩm:** {res.product_name}\n"
+        f"- **Thời gian đăng dự kiến:** `{res.scheduled_time.strftime('%H:%M')} ({TZ_LABEL}) - {weekday}, ngày {res.scheduled_time.strftime('%d/%m/%Y')}`\n"
+        f"- **Áp dụng cho:** {len(res.site_names)} website ({', '.join(res.site_names)})\n"
+        f"- **Trạng thái:** Sẽ tự động đăng dưới dạng `{res.post_status}`\n\n"
+        f"👉 *Bạn có thể theo dõi tiến độ hoặc hủy lịch bất kỳ lúc nào tại tab **📅 Lịch Đăng Bài**.*"
+    )
 
 
 def on_change_preview_site(selected_site, articles_state, edit_mode_active):

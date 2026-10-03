@@ -253,7 +253,7 @@ def resize_dimensions(img: Image.Image, width: int, height: int, keep_aspect: bo
 
 
 def extract_image_from_editor(editor_data: Any) -> Image.Image | None:
-    """Trích xuất ảnh PIL an toàn từ dữ liệu trả về của gr.ImageEditor."""
+    """Trích xuất ảnh PIL an toàn từ dữ liệu trình soạn ảnh (PIL / đường dẫn / dict có 'composite'|'background')."""
     if editor_data is None:
         return None
     if isinstance(editor_data, Image.Image):

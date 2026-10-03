@@ -11,6 +11,7 @@ from core.image_processor import (
     process_image_batch,
     format_processing_summary,
 )
+from ui.seo_panel import EMPTY_PANEL as EMPTY_SEO_PANEL
 
 logger = logging.getLogger(__name__)
 
@@ -644,6 +645,8 @@ def build_tab_create(db_session=None) -> dict:
                     interactive=True,
                 )
 
+                seo_panel = gr.HTML(value=EMPTY_SEO_PANEL, label="Điểm SEO")
+
                 with gr.Row():
                     toggle_edit_btn = gr.Button("🔄 Chuyển đổi chế độ (Xem / Chỉnh sửa HTML)")
                 
@@ -780,6 +783,7 @@ def build_tab_create(db_session=None) -> dict:
         'toggle_edit_btn': toggle_edit_btn,
         'edit_mode_state': edit_mode_state,
         'preview_output': preview_output,
+        'seo_panel': seo_panel,
         'html_editor': html_editor,
         'save_html_btn': save_html_btn,
         'post_type_selector': post_type_selector,

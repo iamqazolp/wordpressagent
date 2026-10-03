@@ -7,6 +7,7 @@ from ui.tab_create import (
     build_tab_create, run_pipeline_ui, publish_to_sites_ui, schedule_post_ui, save_draft_articles_ui,
     on_change_preview_site, on_edit_title, on_edit_short_desc, on_toggle_edit_mode, on_save_html_edit
 )
+from ui.seo_panel import refresh_seo_panel
 from ui.tab_bulk import build_tab_bulk
 from ui.tab_scheduler import build_tab_scheduler
 from ui.tab_templates import (
@@ -72,7 +73,18 @@ def create_app() -> gr.Blocks:
         # =====================================================================
         # EVENT WIRING (Tab 1: Tạo & Đăng Bài)
         # =====================================================================
-        create_comps['create_btn'].click(
+        # Chấm điểm SEO: làm mới panel mỗi khi bài viết / ảnh / loại nội dung thay đổi
+        seo_inputs = [
+            articles_state,
+            current_preview_site_state,
+            create_comps['image_input'],
+            create_comps['post_type_selector'],
+        ]
+
+        def _refresh_seo_after(event):
+            return event.then(fn=refresh_seo_panel, inputs=seo_inputs, outputs=[create_comps['seo_panel']])
+
+        _refresh_seo_after(create_comps['create_btn'].click(
             fn=run_pipeline_ui,
             inputs=[
                 create_comps['product_input'],
@@ -93,9 +105,9 @@ def create_app() -> gr.Blocks:
                 create_comps['status_box'],
             ],
             show_progress=True,
-        )
+        ))
 
-        create_comps['preview_site_selector'].change(
+        _refresh_seo_after(create_comps['preview_site_selector'].change(
             fn=on_change_preview_site,
             inputs=[
                 create_comps['preview_site_selector'],
@@ -109,19 +121,23 @@ def create_app() -> gr.Blocks:
                 create_comps['html_editor'],
                 current_preview_site_state,
             ],
-        )
+        ))
 
-        create_comps['title_output'].change(
+        _refresh_seo_after(create_comps['title_output'].change(
             fn=on_edit_title,
             inputs=[create_comps['title_output'], current_preview_site_state, articles_state],
             outputs=[articles_state],
-        )
+        ))
 
-        create_comps['short_desc_editor'].change(
+        _refresh_seo_after(create_comps['short_desc_editor'].change(
             fn=on_edit_short_desc,
             inputs=[create_comps['short_desc_editor'], current_preview_site_state, articles_state],
             outputs=[articles_state],
-        )
+        ))
+
+        # Đổi ảnh hoặc loại nội dung cũng ảnh hưởng điểm (số ảnh, dải độ dài tiêu đề)
+        for _trigger in (create_comps['image_input'].change, create_comps['post_type_selector'].change):
+            _trigger(fn=refresh_seo_panel, inputs=seo_inputs, outputs=[create_comps['seo_panel']])
 
         create_comps['toggle_edit_btn'].click(
             fn=on_toggle_edit_mode,
@@ -134,7 +150,7 @@ def create_app() -> gr.Blocks:
             ],
         )
 
-        create_comps['save_html_btn'].click(
+        _refresh_seo_after(create_comps['save_html_btn'].click(
             fn=on_save_html_edit,
             inputs=[
                 create_comps['html_editor'],
@@ -157,7 +173,7 @@ def create_app() -> gr.Blocks:
                 create_comps['html_editor'],
                 current_preview_site_state,
             ],
-        )
+        ))
 
         history_detail_outputs = [
             history_comps['title_input'],

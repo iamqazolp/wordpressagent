@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import Session, sessionmaker, declarative_base
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +25,23 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
+
+@contextmanager
+def session_scope() -> Iterator[Session]:
+    """
+    Mở một session cho một thao tác nghiệp vụ và luôn đóng khi xong (rollback nếu có lỗi chưa xử lý).
+    Không tự commit: crud.* và service tự commit khi ghi. Đọc SessionLocal lúc gọi nên test chỉ cần
+    monkeypatch `db.database.SessionLocal` một lần là mọi service dùng DB giả.
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
 
 def get_db():
     db = SessionLocal()

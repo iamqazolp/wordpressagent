@@ -12,34 +12,9 @@ from db import crud
 from core import wp_client, pipeline
 from core.timeutil import now_vn, fmt_vn, TZ_LABEL
 from ui import taxonomy_records as tr
+from ui.common import extract_file_paths, extract_id_from_choice
 
 logger = logging.getLogger(__name__)
-
-
-def _extract_file_paths(files) -> list[str]:
-    """Trích xuất danh sách đường dẫn file an toàn từ Gradio input."""
-    if not files:
-        return []
-    paths = []
-    for f in files:
-        if isinstance(f, str):
-            paths.append(f)
-        elif hasattr(f, "name"):
-            paths.append(f.name)
-        else:
-            paths.append(str(f))
-    return paths
-
-
-def _extract_id_from_choice(choice_str: str) -> int | None:
-    """Trích xuất ID từ chuỗi hiển thị '#12 - Tên sản phẩm...'"""
-    if not choice_str or not choice_str.startswith("#"):
-        return None
-    try:
-        id_part = choice_str.split(" - ")[0].replace("#", "").strip()
-        return int(id_part)
-    except Exception:
-        return None
 
 
 def fetch_history_data(site_filter: str = "Tất cả", status_filter: str = "Tất cả") -> pd.DataFrame:
@@ -146,7 +121,7 @@ def get_history_post_choices(site_filter: str = "Tất cả", status_filter: str
 
 def on_select_history_post(choice_str: str) -> tuple:
     """Tải thông tin chi tiết và hình ảnh của bài viết được chọn."""
-    post_id = _extract_id_from_choice(choice_str)
+    post_id = extract_id_from_choice(choice_str)
     if not post_id:
         return "", "", "", "", "Sản phẩm WooCommerce", "draft", "", "", "*(Chưa chọn bài viết)*", None, None
 
@@ -214,7 +189,7 @@ def on_save_history_edits(
     status_filter: str = "Tất cả",
 ) -> tuple:
     """Lưu các thay đổi nội dung và hình ảnh của bài viết vào database, cập nhật bảng và giữ nguyên bài đang chọn."""
-    post_id = _extract_id_from_choice(choice_str)
+    post_id = extract_id_from_choice(choice_str)
     if not post_id:
         return "❌ Vui lòng chọn một bài viết để lưu!", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
@@ -231,7 +206,7 @@ def on_save_history_edits(
         h.raw_html = raw_html.strip()
 
         # Kiểm tra nếu người dùng tải lên danh sách ảnh mới
-        new_paths = _extract_file_paths(new_images_input)
+        new_paths = extract_file_paths(new_images_input)
         if new_paths:
             h.image_paths_json = json.dumps(new_paths, ensure_ascii=False)
             current_images = new_paths
@@ -295,7 +270,7 @@ def on_publish_history_post(
     status_filter: str = "Tất cả",
 ) -> tuple:
     """Đăng ngay bài viết đã lưu kèm hình ảnh lên WordPress/WooCommerce và cập nhật trạng thái."""
-    post_id = _extract_id_from_choice(choice_str)
+    post_id = extract_id_from_choice(choice_str)
     if not post_id:
         return "❌ Vui lòng chọn một bài viết để đăng!", gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
@@ -310,7 +285,7 @@ def on_publish_history_post(
             return "❌ Không tìm thấy thông tin xác thực của website!", gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
         # Xác định hình ảnh đăng bài: ưu tiên ảnh mới upload, nếu không thì lấy ảnh đã lưu
-        new_paths = _extract_file_paths(new_images_input)
+        new_paths = extract_file_paths(new_images_input)
         if new_paths:
             image_paths = new_paths
             h.image_paths_json = json.dumps(new_paths, ensure_ascii=False)
@@ -443,7 +418,7 @@ def on_publish_history_post(
 
 def on_delete_history_post(choice_str: str, site_filter: str = "Tất cả", status_filter: str = "Tất cả") -> tuple:
     """Xóa bài viết khỏi CSDL và làm mới danh sách."""
-    post_id = _extract_id_from_choice(choice_str)
+    post_id = extract_id_from_choice(choice_str)
     if not post_id:
         return "❌ Vui lòng chọn bài viết cần xóa!", gr.update(), gr.update(), None, "*(Chưa chọn bài viết)*"
 

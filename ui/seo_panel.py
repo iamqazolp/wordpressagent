@@ -64,13 +64,13 @@ def refresh_seo_panel(articles_state, current_site, image_files, post_type) -> s
             return EMPTY_PANEL
         art = articles_state[current_site]
 
-        from ui.tab_create import _extract_file_paths  # tránh import vòng khi nạp module
+        from ui.common import extract_file_paths
 
         report = score_article(
             title=art.get("title", ""),
             html=art.get("raw_html", ""),
             product_name=art.get("product_name", ""),
-            image_count=len(_extract_file_paths(image_files)),
+            image_count=len(extract_file_paths(image_files)),
             short_description=art.get("short_description", ""),
             post_type=post_type or "product",
         )

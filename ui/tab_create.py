@@ -13,24 +13,10 @@ from core.image_processor import (
 )
 from core import taxonomy_service
 from core.timeutil import now_vn, to_vn_naive, VN_TZ, TZ_LABEL, TZ_NAME
+from ui.common import extract_file_paths
 from ui.seo_panel import EMPTY_PANEL as EMPTY_SEO_PANEL
 
 logger = logging.getLogger(__name__)
-
-def _extract_file_paths(files) -> list[str]:
-    """Trích xuất danh sách đường dẫn file an toàn từ Gradio input."""
-    if not files:
-        return []
-    paths = []
-    for f in files:
-        if isinstance(f, str):
-            paths.append(f)
-        elif hasattr(f, "name"):
-            paths.append(f.name)
-        else:
-            paths.append(str(f))
-    return paths
-
 
 def run_pipeline_ui(product_name, image_files, extra_urls_text, user_notes_text, selected_sites, randomize_enabled, template_choice, progress=gr.Progress()):
     """
@@ -65,7 +51,7 @@ def run_pipeline_ui(product_name, image_files, extra_urls_text, user_notes_text,
                     break
         
         # Chạy pipeline
-        image_paths = _extract_file_paths(image_files)
+        image_paths = extract_file_paths(image_files)
         extra_urls = [u.strip() for u in extra_urls_text.splitlines() if u.strip()]
         
         articles = generate_articles(
@@ -144,7 +130,7 @@ def publish_to_sites_ui(
     db = SessionLocal()
     try:
         all_configs = crud.get_all_site_configs(db)
-        image_paths = _extract_file_paths(image_files)
+        image_paths = extract_file_paths(image_files)
         
         results = publish_articles(
             articles=articles_state,
@@ -228,7 +214,7 @@ def save_draft_articles_ui(
     db = SessionLocal()
     saved_count = 0
     try:
-        image_paths = _extract_file_paths(image_files)
+        image_paths = extract_file_paths(image_files)
         is_prod = 'product' in post_type.lower() or 'sản phẩm' in post_type.lower()
 
         for site_name, art in articles_state.items():
@@ -301,7 +287,7 @@ def handle_preview_processed_images(
     do_remove_bg: bool,
 ) -> tuple:
     """Xử lý thử nghiệm ảnh và hiển thị preview kèm báo cáo nén dung lượng."""
-    paths = _extract_file_paths(image_files)
+    paths = extract_file_paths(image_files)
     if not paths:
         return None, "❌ Vui lòng tải lên ít nhất 1 ảnh ở trên để xem trước."
 
@@ -447,7 +433,7 @@ def schedule_post_ui(
     if target_time <= now:
         return f"❌ Thời gian hẹn ({target_time.strftime('%d/%m/%Y %H:%M')} {TZ_LABEL}) phải ở trong tương lai (sau hiện tại: {now.strftime('%d/%m/%Y %H:%M')} {TZ_LABEL})."
 
-    image_paths = _extract_file_paths(image_files)
+    image_paths = extract_file_paths(image_files)
     first_site = list(articles_state.keys())[0]
     prod_name = articles_state[first_site].get("product_name") or articles_state[first_site].get("title", "Sản phẩm")
 
@@ -541,7 +527,7 @@ def on_save_html_edit(new_html, current_site, articles_state, image_files):
     """Lưu mã HTML đã sửa vào articles_state và cập nhật lại bản preview."""
     if articles_state and current_site in articles_state:
         from core.pipeline import make_preview_html
-        image_paths = _extract_file_paths(image_files)
+        image_paths = extract_file_paths(image_files)
         articles_state[current_site]['raw_html'] = new_html
         articles_state[current_site]['preview_html'] = make_preview_html(new_html, image_paths)
         gr.Info("✅ Đã lưu thay đổi nội dung HTML!")

@@ -11,6 +11,7 @@ from core.image_processor import (
     process_image_batch,
     format_processing_summary,
 )
+from core import taxonomy_service
 from ui.seo_panel import EMPTY_PANEL as EMPTY_SEO_PANEL
 
 logger = logging.getLogger(__name__)
@@ -181,6 +182,8 @@ def publish_to_sites_ui(
                     regular_price=regular_price,
                     sale_price=sale_price,
                     image_paths_json=image_paths_json,
+                    category_ids_json=json.dumps(taxonomy_service.effective_category_ids(article, post_type)),
+                    tags_json=json.dumps(article.get('tags') or [], ensure_ascii=False),
                 )
         
         # Định dạng kết quả thành markdown
@@ -191,6 +194,8 @@ def publish_to_sites_ui(
                 line = f"- **{r['site_name']}**: ✅ Thành công ({status_lbl}) | [Xem]({r['post_url']}) | [Sửa]({r['edit_url']})"
                 if r.get('image_warning'):
                     line += f"\n  - ⚠️ *Lưu ý về hình ảnh:* {r['image_warning']}"
+                if r.get('taxonomy_warning'):
+                    line += f"\n  - ⚠️ *Lưu ý về tag:* {r['taxonomy_warning']}"
                 report.append(line)
             else:
                 report.append(f"- **{r['site_name']}**: ❌ {r['error']}")
@@ -267,6 +272,8 @@ def save_draft_articles_ui(
                 regular_price=regular_price,
                 sale_price=sale_price,
                 image_paths_json=site_image_paths_json,
+                category_ids_json=json.dumps(taxonomy_service.effective_category_ids(art, post_type)),
+                tags_json=json.dumps(art.get('tags') or [], ensure_ascii=False),
             )
             saved_count += 1
 
@@ -647,6 +654,27 @@ def build_tab_create(db_session=None) -> dict:
 
                 seo_panel = gr.HTML(value=EMPTY_SEO_PANEL, label="Điểm SEO")
 
+                with gr.Group():
+                    gr.Markdown("**🏷️ Danh mục & Tag cho website đang xem** *(mỗi website có danh mục riêng)*")
+                    category_dropdown = gr.Dropdown(
+                        label="Danh mục (Category)",
+                        choices=[],
+                        value=[],
+                        multiselect=True,
+                        interactive=True,
+                        info="Tối đa nên chọn 1–2 danh mục. Danh sách lấy từ website (bấm 🔄 nếu thiếu).",
+                    )
+                    tags_input = gr.Textbox(
+                        label="Tag (cách nhau bằng dấu phẩy)",
+                        placeholder="VD: quạt công nghiệp, quạt hút xưởng",
+                        lines=1,
+                        info="Tag chưa có trên website sẽ được tạo tự động khi đăng.",
+                    )
+                    with gr.Row():
+                        btn_ai_taxonomy = gr.Button("🤖 AI gợi ý danh mục & tag", size="sm")
+                        btn_sync_categories = gr.Button("🔄 Làm mới danh mục", size="sm")
+                    taxonomy_status = gr.Markdown(value="ℹ️ Tạo bài viết trước để chọn danh mục và tag.")
+
                 with gr.Row():
                     toggle_edit_btn = gr.Button("🔄 Chuyển đổi chế độ (Xem / Chỉnh sửa HTML)")
                 
@@ -784,6 +812,11 @@ def build_tab_create(db_session=None) -> dict:
         'edit_mode_state': edit_mode_state,
         'preview_output': preview_output,
         'seo_panel': seo_panel,
+        'category_dropdown': category_dropdown,
+        'tags_input': tags_input,
+        'btn_ai_taxonomy': btn_ai_taxonomy,
+        'btn_sync_categories': btn_sync_categories,
+        'taxonomy_status': taxonomy_status,
         'html_editor': html_editor,
         'save_html_btn': save_html_btn,
         'post_type_selector': post_type_selector,

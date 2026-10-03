@@ -8,6 +8,10 @@ from ui.tab_create import (
     on_change_preview_site, on_edit_title, on_edit_short_desc, on_toggle_edit_mode, on_save_html_edit
 )
 from ui.seo_panel import refresh_seo_panel
+from ui.taxonomy_panel import (
+    refresh_taxonomy_controls, on_categories_input, on_tags_input,
+    on_sync_categories, on_ai_suggest, autofill_taxonomy,
+)
 from ui.tab_bulk import build_tab_bulk
 from ui.tab_scheduler import build_tab_scheduler
 from ui.tab_templates import (
@@ -84,7 +88,14 @@ def create_app() -> gr.Blocks:
         def _refresh_seo_after(event):
             return event.then(fn=refresh_seo_panel, inputs=seo_inputs, outputs=[create_comps['seo_panel']])
 
-        _refresh_seo_after(create_comps['create_btn'].click(
+        # Danh mục & Tag: làm mới ô chọn theo bài/site đang xem
+        tax_inputs = [articles_state, current_preview_site_state, create_comps['post_type_selector']]
+        tax_outputs = [create_comps['category_dropdown'], create_comps['tags_input'], create_comps['taxonomy_status']]
+
+        def _refresh_taxonomy_after(event):
+            return event.then(fn=refresh_taxonomy_controls, inputs=tax_inputs, outputs=tax_outputs)
+
+        _refresh_taxonomy_after(_refresh_seo_after(create_comps['create_btn'].click(
             fn=run_pipeline_ui,
             inputs=[
                 create_comps['product_input'],
@@ -105,9 +116,14 @@ def create_app() -> gr.Blocks:
                 create_comps['status_box'],
             ],
             show_progress=True,
+        )).then(
+            fn=autofill_taxonomy,
+            inputs=[articles_state, create_comps['post_type_selector']],
+            outputs=[articles_state],
+            show_progress='minimal',
         ))
 
-        _refresh_seo_after(create_comps['preview_site_selector'].change(
+        _refresh_taxonomy_after(_refresh_seo_after(create_comps['preview_site_selector'].change(
             fn=on_change_preview_site,
             inputs=[
                 create_comps['preview_site_selector'],
@@ -121,7 +137,7 @@ def create_app() -> gr.Blocks:
                 create_comps['html_editor'],
                 current_preview_site_state,
             ],
-        ))
+        )))
 
         _refresh_seo_after(create_comps['title_output'].change(
             fn=on_edit_title,
@@ -136,8 +152,32 @@ def create_app() -> gr.Blocks:
         ))
 
         # Đổi ảnh hoặc loại nội dung cũng ảnh hưởng điểm (số ảnh, dải độ dài tiêu đề)
-        for _trigger in (create_comps['image_input'].change, create_comps['post_type_selector'].change):
-            _trigger(fn=refresh_seo_panel, inputs=seo_inputs, outputs=[create_comps['seo_panel']])
+        create_comps['image_input'].change(fn=refresh_seo_panel, inputs=seo_inputs, outputs=[create_comps['seo_panel']])
+        _refresh_taxonomy_after(
+            create_comps['post_type_selector'].change(fn=refresh_seo_panel, inputs=seo_inputs, outputs=[create_comps['seo_panel']])
+        )
+
+        # Chọn danh mục / tag thủ công (.input chỉ chạy khi NGƯỜI DÙNG sửa, không chạy khi code cập nhật giá trị)
+        create_comps['category_dropdown'].input(
+            fn=on_categories_input,
+            inputs=[create_comps['category_dropdown'], current_preview_site_state, articles_state, create_comps['post_type_selector']],
+            outputs=[articles_state],
+        )
+        create_comps['tags_input'].input(
+            fn=on_tags_input,
+            inputs=[create_comps['tags_input'], current_preview_site_state, articles_state],
+            outputs=[articles_state],
+        )
+        create_comps['btn_sync_categories'].click(
+            fn=on_sync_categories,
+            inputs=tax_inputs,
+            outputs=tax_outputs,
+        )
+        create_comps['btn_ai_taxonomy'].click(
+            fn=on_ai_suggest,
+            inputs=tax_inputs,
+            outputs=[articles_state] + tax_outputs,
+        )
 
         create_comps['toggle_edit_btn'].click(
             fn=on_toggle_edit_mode,

@@ -191,6 +191,7 @@ def publish_product(
     regular_price: str = "",
     sale_price: str = "",
     short_description: str = "",
+    tag_ids: list[int] | None = None,
 ) -> dict:
     """
     Đăng sản phẩm lên WooCommerce qua REST API (/wp-json/wc/v3/products).
@@ -226,6 +227,9 @@ def publish_product(
 
     if category_ids:
         payload["categories"] = [{"id": cid} for cid in category_ids]
+
+    if tag_ids:
+        payload["tags"] = [{"id": tid} for tid in tag_ids]
 
     if uploaded_images:
         images_payload = []
@@ -273,6 +277,7 @@ def publish_post(
     site_config: dict,
     status: str = "draft",
     category_ids: list[int] | None = None,
+    tag_ids: list[int] | None = None,
 ) -> dict:
     """
     Đăng bài viết thông thường (Blog Post) lên WordPress qua REST API (/wp-json/wp/v2/posts).
@@ -292,6 +297,9 @@ def publish_post(
 
     if category_ids:
         payload["categories"] = category_ids
+
+    if tag_ids:
+        payload["tags"] = tag_ids
 
     if uploaded_images and uploaded_images[0].get('id'):
         payload["featured_media"] = uploaded_images[0]["id"]
@@ -430,3 +438,106 @@ def get_categories(site_config: dict) -> list[dict]:
     except Exception as e:
         logger.warning(f"Không lấy được danh sách category: {e}")
         return []
+
+
+# ═════════════════════════════════════════════════════════════
+# Taxonomy (category / tag)
+# ═════════════════════════════════════════════════════════════
+
+def _is_product_scope(scope: str) -> bool:
+    return scope == "product"
+
+
+def _taxonomy_url_and_auth(site_config: dict, kind: str, scope: str) -> tuple[str, HTTPBasicAuth]:
+    """
+    product -> WooCommerce API (wc/v3, dùng consumer key/secret)
+    post    -> WordPress core API (wp/v2, dùng Application Password)
+    kind: 'categories' | 'tags'
+    """
+    base = site_config["url"].rstrip("/")
+    if _is_product_scope(scope):
+        auth = HTTPBasicAuth(site_config["client_key"], site_config["client_secret"])
+        return f"{base}/wp-json/wc/v3/products/{kind}", auth
+    return f"{base}/wp-json/wp/v2/{kind}", _get_wp_auth(site_config)
+
+
+def fetch_categories(site_config: dict, scope: str, per_page: int = 100, max_pages: int = 30) -> list[dict]:
+    """
+    Lấy TOÀN BỘ category của website (có phân trang). Khác get_categories(): hàm này RAISE khi lỗi
+    để nơi gọi không lưu nhầm danh sách rỗng đè lên cache cũ.
+
+    scope: 'product' (WooCommerce) | 'post' (blog). Trả về [{"id", "name", "parent"}].
+    """
+    url, auth = _taxonomy_url_and_auth(site_config, "categories", scope)
+    result: list[dict] = []
+    page = 1
+    while page <= max_pages:
+        response = requests.get(
+            url, auth=auth, timeout=15,
+            params={"per_page": per_page, "page": page, "hide_empty": "false"},
+        )
+        if response.status_code == 400 and page > 1:
+            break  # WP trả 400 rest_post_invalid_page_number khi vượt trang cuối
+        response.raise_for_status()
+        batch = response.json()
+        if not isinstance(batch, list):
+            raise ValueError(f"Phản hồi category không hợp lệ: {str(batch)[:200]}")
+        result.extend(
+            {"id": c["id"], "name": _html_unescape(c.get("name", "")), "parent": c.get("parent", 0) or 0}
+            for c in batch
+        )
+        total_pages = response.headers.get("X-WP-TotalPages")
+        if len(batch) < per_page or (total_pages and page >= int(total_pages)):
+            break
+        page += 1
+    return result
+
+
+def _html_unescape(text: str) -> str:
+    """WP trả tên term đã escape (vd 'Quạt &amp; Máy')."""
+    import html
+    return html.unescape(text or "")
+
+
+def _norm_name(name: str) -> str:
+    import unicodedata
+    return re.sub(r"\s+", " ", unicodedata.normalize("NFC", name or "")).strip().casefold()
+
+
+def ensure_tags(site_config: dict, scope: str, names: list[str]) -> list[int]:
+    """
+    Với mỗi tên tag: tìm tag trùng tên (không phân biệt hoa/thường) trên site, chưa có thì tạo mới.
+    Trả về danh sách id theo đúng thứ tự (đã khử trùng lặp). Tag lỗi riêng lẻ bị bỏ qua và ghi log,
+    không làm hỏng cả bài đăng.
+    """
+    url, auth = _taxonomy_url_and_auth(site_config, "tags", scope)
+    ids: list[int] = []
+    seen_names: set[str] = set()
+    for raw in names:
+        name = re.sub(r"\s+", " ", (raw or "")).strip()
+        key = _norm_name(name)
+        if not name or key in seen_names:
+            continue
+        seen_names.add(key)
+        try:
+            found = requests.get(url, auth=auth, timeout=15, params={"search": name, "per_page": 100})
+            found.raise_for_status()
+            match = next((t for t in found.json() if _norm_name(_html_unescape(t.get("name", ""))) == key), None)
+            if match:
+                tag_id = match["id"]
+            else:
+                created = requests.post(url, auth=auth, json={"name": name}, timeout=15)
+                if created.status_code == 400:
+                    # Tag đã tồn tại (khác cách viết/slug): WP trả id trong data
+                    data = (created.json() or {}).get("data", {}) or {}
+                    tag_id = data.get("term_id") or data.get("resource_id")
+                    if not tag_id:
+                        created.raise_for_status()
+                else:
+                    created.raise_for_status()
+                    tag_id = created.json()["id"]
+            if tag_id not in ids:
+                ids.append(int(tag_id))
+        except Exception as e:
+            logger.warning(f"Bỏ qua tag '{name}': {e}")
+    return ids

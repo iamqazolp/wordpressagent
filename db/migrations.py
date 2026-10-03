@@ -62,8 +62,30 @@ def _m001_baseline_columns(conn: Connection) -> None:
         add_column_if_missing(conn, "sites", col, ddl)
 
 
+def _m002_taxonomy(conn: Connection) -> None:
+    """Phase 3.3: lưu category/tag đã chọn cho bài và cache danh mục của site."""
+    add_column_if_missing(conn, "post_history", "category_ids_json", "TEXT DEFAULT '[]'")
+    add_column_if_missing(conn, "post_history", "tags_json", "TEXT DEFAULT '[]'")
+    # Bảng site_taxonomy do Base.metadata.create_all tạo (chạy trước migration); đây chỉ là lưới an toàn
+    # cho trường hợp migration được chạy độc lập.
+    conn.execute(text(
+        "CREATE TABLE IF NOT EXISTS site_taxonomy ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "site_id INTEGER NOT NULL REFERENCES sites(id), "
+        "kind VARCHAR(20) NOT NULL DEFAULT 'category', "
+        "scope VARCHAR(20) NOT NULL, "
+        "wp_id INTEGER NOT NULL, "
+        "name VARCHAR(300) NOT NULL, "
+        "parent_id INTEGER, "
+        "fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+        "CONSTRAINT uq_site_taxonomy UNIQUE (site_id, kind, scope, wp_id))"
+    ))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_site_taxonomy_site_id ON site_taxonomy (site_id)"))
+
+
 MIGRATIONS: list[Migration] = [
     (1, "baseline_columns", _m001_baseline_columns),
+    (2, "taxonomy", _m002_taxonomy),
 ]
 
 

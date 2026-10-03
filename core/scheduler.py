@@ -9,6 +9,7 @@ from apscheduler.triggers.date import DateTrigger
 from db.database import SessionLocal
 from db import crud
 from core.pipeline import publish_articles
+from core import taxonomy_service
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,8 @@ def execute_scheduled_job(job_id: int):
                     wp_post_id=str(res.get("post_id", "")) if res.get("post_id") else None,
                     wp_post_url=res.get("post_url"),
                     error_message=res.get("error"),
+                    category_ids_json=json.dumps(taxonomy_service.effective_category_ids(art, job.post_type)),
+                    tags_json=json.dumps(art.get("tags") or [], ensure_ascii=False),
                 )
 
         final_status = "completed" if success_count == total_count else ("failed" if success_count == 0 else "partially_completed")

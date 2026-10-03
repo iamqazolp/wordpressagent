@@ -331,6 +331,23 @@ def on_publish_history_post(
 
         # Xuất bản bài viết hoặc sản phẩm
         is_product = "product" in post_type.lower() or "sản phẩm" in post_type.lower()
+
+        # Category/tag đã chọn lúc lưu nháp. Id category chỉ hợp lệ trong đúng loại nội dung (product/post)
+        # đã dùng khi chọn, nên bỏ qua nếu bây giờ đăng dưới loại khác.
+        from core import taxonomy_service
+        saved_scope = "product" if h.post_type == "product" else "post"
+        category_ids: list[int] = []
+        if saved_scope == ("product" if is_product else "post"):
+            try:
+                category_ids = [int(c) for c in json.loads(h.category_ids_json or "[]")]
+            except Exception:
+                category_ids = []
+        try:
+            saved_tags = json.loads(h.tags_json or "[]")
+        except Exception:
+            saved_tags = []
+        tag_ids, taxonomy_warning = taxonomy_service.resolve_tag_ids(site_config, post_type, saved_tags)
+
         if is_product:
             res = wp_client.publish_product(
                 title=title.strip() or h.product_name,
@@ -341,6 +358,8 @@ def on_publish_history_post(
                 regular_price=reg_price.strip(),
                 sale_price=sale_price.strip(),
                 short_description=short_desc.strip(),
+                category_ids=category_ids,
+                tag_ids=tag_ids,
             )
         else:
             res = wp_client.publish_post(
@@ -349,6 +368,8 @@ def on_publish_history_post(
                 uploaded_images=uploaded_images,
                 site_config=site_config,
                 status=post_status,
+                category_ids=category_ids,
+                tag_ids=tag_ids,
             )
 
         # Cập nhật thông tin vào CSDL
@@ -374,6 +395,8 @@ def on_publish_history_post(
         )
         if image_warning:
             result_msg += f"- ⚠️ *Cảnh báo ảnh:* {image_warning}\n"
+        if taxonomy_warning:
+            result_msg += f"- ⚠️ *Cảnh báo tag:* {taxonomy_warning}\n"
 
         gr.Info(f"🎉 Đã đăng thành công lên {h.site.name}!")
         updated_table = fetch_history_data(site_filter, status_filter)

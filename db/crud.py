@@ -9,7 +9,9 @@ from cryptography.fernet import Fernet
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from db.models import Site, PostHistory, PromptTemplate, ScheduledPost
+from datetime import datetime, timedelta
+
+from db.models import Site, PostHistory, PromptTemplate, ScheduledPost, SiteTaxonomy
 
 from dotenv import load_dotenv
 
@@ -256,6 +258,8 @@ def create_post_history(
     regular_price: str = '',
     sale_price: str = '',
     image_paths_json: str = '[]',
+    category_ids_json: str = '[]',
+    tags_json: str = '[]',
 ) -> PostHistory | None:
     try:
         history = PostHistory(
@@ -272,6 +276,8 @@ def create_post_history(
             regular_price=regular_price,
             sale_price=sale_price,
             image_paths_json=image_paths_json,
+            category_ids_json=category_ids_json,
+            tags_json=tags_json,
         )
         db.add(history)
         db.commit()
@@ -562,3 +568,68 @@ def delete_scheduled_post(db: Session, job_id: int) -> bool:
         logger.error(f"Lỗi khi xóa scheduled post #{job_id}: {e}")
         return False
 
+
+# ═════════════════════════════════════════════════════════════
+# Taxonomy cache (category theo từng website)
+# ═════════════════════════════════════════════════════════════
+
+TAXONOMY_TTL = timedelta(hours=24)
+
+
+def replace_site_categories(db: Session, site_id: int, scope: str, categories: list[dict]) -> int:
+    """
+    Thay toàn bộ cache category của (site, scope) bằng danh sách mới trong 1 transaction.
+    Chỉ gọi khi đã lấy được danh sách THÀNH CÔNG — lỗi mạng không được xoá cache cũ.
+    categories: [{"id": int, "name": str, "parent": int}]
+    """
+    try:
+        db.query(SiteTaxonomy).filter(
+            SiteTaxonomy.site_id == site_id,
+            SiteTaxonomy.kind == "category",
+            SiteTaxonomy.scope == scope,
+        ).delete(synchronize_session=False)
+        now = datetime.now()
+        seen: set[int] = set()
+        for c in categories:
+            wp_id = int(c["id"])
+            if wp_id in seen:
+                continue
+            seen.add(wp_id)
+            db.add(SiteTaxonomy(
+                site_id=site_id, kind="category", scope=scope, wp_id=wp_id,
+                name=str(c.get("name", "")), parent_id=int(c.get("parent") or 0) or None,
+                fetched_at=now,
+            ))
+        db.commit()
+        return len(seen)
+    except Exception:
+        db.rollback()
+        logger.exception("Lỗi khi lưu cache category")
+        raise
+
+
+def get_site_categories(db: Session, site_id: int, scope: str) -> list[SiteTaxonomy]:
+    return (
+        db.query(SiteTaxonomy)
+        .filter(SiteTaxonomy.site_id == site_id, SiteTaxonomy.kind == "category", SiteTaxonomy.scope == scope)
+        .order_by(SiteTaxonomy.name)
+        .all()
+    )
+
+
+def get_categories_fetched_at(db: Session, site_id: int, scope: str) -> datetime | None:
+    row = (
+        db.query(SiteTaxonomy.fetched_at)
+        .filter(SiteTaxonomy.site_id == site_id, SiteTaxonomy.kind == "category", SiteTaxonomy.scope == scope)
+        .order_by(desc(SiteTaxonomy.fetched_at))
+        .first()
+    )
+    return row[0] if row else None
+
+
+def is_categories_stale(db: Session, site_id: int, scope: str, now: datetime | None = None) -> bool:
+    """True nếu chưa có cache hoặc cache cũ hơn TTL (24h)."""
+    fetched = get_categories_fetched_at(db, site_id, scope)
+    if fetched is None:
+        return True
+    return (now or datetime.now()) - fetched > TAXONOMY_TTL

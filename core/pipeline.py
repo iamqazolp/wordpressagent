@@ -8,7 +8,7 @@ import re
 from typing import Callable
 
 from config import settings
-from core import scraper, searcher, ai_writer, wp_client
+from core import scraper, searcher, ai_writer, wp_client, taxonomy_service
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +141,13 @@ def publish_articles(
         title = article_data.get('title', '')
         raw_html = article_data.get('raw_html', '')
         short_desc = article_data.get('short_description', '')
-        
+
+        # Category (id theo từng site) và tag (tên -> id, tạo nếu chưa có). Lỗi tag chỉ cảnh báo, không chặn đăng.
+        category_ids = taxonomy_service.effective_category_ids(article_data, post_type)
+        tag_ids, taxonomy_warning = taxonomy_service.resolve_tag_ids(
+            site_config, post_type, article_data.get('tags') or []
+        )
+
         try:
             if 'product' in post_type.lower() or 'sản phẩm' in post_type.lower():
                 res = wp_client.publish_product(
@@ -153,6 +159,8 @@ def publish_articles(
                     regular_price=regular_price,
                     sale_price=sale_price,
                     short_description=short_desc,
+                    category_ids=category_ids,
+                    tag_ids=tag_ids,
                 )
             else:
                 if not site_config.get('wp_user'):
@@ -162,12 +170,15 @@ def publish_articles(
                     title=title, html_content=raw_html,
                     uploaded_images=uploaded, site_config=site_config,
                     status=post_status,
+                    category_ids=category_ids,
+                    tag_ids=tag_ids,
                 )
             results.append({
                 'site_name': site_name, 'success': True,
                 'post_id': res.get('post_id'), 'post_url': res.get('post_url'),
                 'edit_url': res.get('edit_url'), 'status': res.get('status'),
                 'image_warning': image_warning,
+                'taxonomy_warning': taxonomy_warning,
                 'error': None,
             })
         except Exception as e:

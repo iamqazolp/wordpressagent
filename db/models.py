@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey, Float
+from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey, Float, UniqueConstraint
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 
@@ -23,6 +23,7 @@ class Site(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     posts = relationship('PostHistory', back_populates='site', cascade='all, delete-orphan')
+    taxonomies = relationship('SiteTaxonomy', back_populates='site', cascade='all, delete-orphan')
 
 
 class PostHistory(Base):
@@ -42,6 +43,8 @@ class PostHistory(Base):
     regular_price = Column(String(50), nullable=True, default="")
     sale_price = Column(String(50), nullable=True, default="")
     image_paths_json = Column(Text, nullable=True, default="[]")
+    category_ids_json = Column(Text, nullable=True, default="[]")   # JSON [wp_category_id, ...] (id theo từng site)
+    tags_json = Column(Text, nullable=True, default="[]")           # JSON ["tag name", ...] (tạo/tra id lúc đăng)
     created_at = Column(DateTime, default=func.now())
     published_at = Column(DateTime, nullable=True)
 
@@ -78,3 +81,19 @@ class ScheduledPost(Base):
     created_at = Column(DateTime, default=func.now())
     executed_at = Column(DateTime, nullable=True)
 
+
+class SiteTaxonomy(Base):
+    """Cache danh mục (category) của từng website, tách theo loại nội dung (post | product)."""
+    __tablename__ = "site_taxonomy"
+    __table_args__ = (UniqueConstraint("site_id", "kind", "scope", "wp_id", name="uq_site_taxonomy"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    site_id = Column(Integer, ForeignKey("sites.id"), nullable=False, index=True)
+    kind = Column(String(20), nullable=False, default="category")   # hiện chỉ dùng 'category'
+    scope = Column(String(20), nullable=False)                      # 'post' (wp/v2) | 'product' (wc/v3)
+    wp_id = Column(Integer, nullable=False)
+    name = Column(String(300), nullable=False)
+    parent_id = Column(Integer, nullable=True)
+    fetched_at = Column(DateTime, default=func.now())
+
+    site = relationship("Site", back_populates="taxonomies")

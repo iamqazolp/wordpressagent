@@ -89,3 +89,15 @@ def test_add_column_if_missing(engine):
         assert add_column_if_missing(conn, "x", "extra", "TEXT") is True
         assert add_column_if_missing(conn, "x", "extra", "TEXT") is False
         assert add_column_if_missing(conn, "no_such_table", "c", "TEXT") is False
+
+
+def test_migration_2_adds_taxonomy_columns_and_table(engine):
+    _make_legacy_schema(engine)
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE IF NOT EXISTS post_history_dummy (id INTEGER)"))
+    run_migrations(engine)
+    with engine.connect() as conn:
+        assert {"category_ids_json", "tags_json"} <= column_names(conn, "post_history")
+        cols = column_names(conn, "site_taxonomy")
+        assert {"site_id", "kind", "scope", "wp_id", "name", "parent_id", "fetched_at"} <= cols
+        assert get_schema_version(conn) >= 2

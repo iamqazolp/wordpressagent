@@ -1,180 +1,129 @@
 from __future__ import annotations
 
-import json
 import logging
-from datetime import datetime
-from pathlib import Path
 import gradio as gr
 import pandas as pd
 
-from db.database import SessionLocal
-from db import crud
-from core import wp_client, pipeline
 from core.timeutil import now_vn, fmt_vn, TZ_LABEL
+from services import posts as post_service
+from services import sites as site_service
+from services.errors import PublishError, ServiceError
 from ui import taxonomy_records as tr
 from ui.common import extract_file_paths, extract_id_from_choice
+from ui.preview import make_preview_html
 
 logger = logging.getLogger(__name__)
 
+ALL = "Tất cả"
+_STATUS_FILTERS = {
+    "💾 Đã lưu nháp": post_service.STATUS_SAVED,
+    "✅ Đã đăng": post_service.STATUS_PUBLISHED,
+    "❌ Lỗi": post_service.STATUS_FAILED,
+}
+_STATUS_LABELS = {
+    "saved": "💾 Đã lưu nháp",
+    "published": "✅ Đã đăng",
+    "draft": "📝 Nháp WP",
+    "failed": "❌ Lỗi",
+}
+_TABLE_COLUMNS = ["ID", "Sản phẩm", "Tiêu đề", "Website", "Loại", "Trạng thái", "Ảnh", "Giá gốc",
+                  "Danh mục / Tag", "Ngày tạo (GMT+7)", "Link WP"]
+_NO_DETAIL = ("", "", "", "", "Sản phẩm WooCommerce", "draft", "", "", "*(Chưa chọn bài viết)*", None, None)
 
-def fetch_history_data(site_filter: str = "Tất cả", status_filter: str = "Tất cả") -> pd.DataFrame:
+
+def _site_arg(site_filter: str) -> str | None:
+    return None if (not site_filter or site_filter == ALL) else site_filter
+
+
+def _statuses(status_filter: str):
+    return _STATUS_FILTERS.get(status_filter) if status_filter and status_filter != ALL else None
+
+
+def fetch_history_data(site_filter: str = ALL, status_filter: str = ALL) -> pd.DataFrame:
     """Lấy dữ liệu lịch sử và kho bài viết từ CSDL với bộ lọc."""
-    db = SessionLocal()
     try:
-        site_id = None
-        if site_filter and site_filter != "Tất cả":
-            site = crud.get_site_by_name(db, site_filter)
-            site_id = site.id if site else -1
-
-        histories = crud.get_post_history(db, site_id=site_id, limit=200)
-
-        data = []
-        tax_cache: dict = {}  # tên danh mục theo (site, loại) — tránh truy vấn lặp cho từng dòng
-        for h in histories:
-            site_name = h.site.name if h.site else "Unknown"
-
-            # Xác định nhãn trạng thái thân thiện
-            if h.status == "saved":
-                status_lbl = "💾 Đã lưu nháp"
-            elif h.status == "published":
-                status_lbl = "✅ Đã đăng"
-            elif h.status == "draft":
-                status_lbl = "📝 Nháp WP"
-            elif h.status == "failed":
-                status_lbl = "❌ Lỗi"
-            else:
-                status_lbl = h.status
-
-            # Áp dụng bộ lọc trạng thái
-            if status_filter and status_filter != "Tất cả":
-                if status_filter == "💾 Đã lưu nháp" and h.status != "saved":
-                    continue
-                elif status_filter == "✅ Đã đăng" and h.status not in ["published", "draft"]:
-                    continue
-                elif status_filter == "❌ Lỗi" and h.status != "failed":
-                    continue
-
-            # Đếm số lượng ảnh
-            img_count = 0
-            if h.image_paths_json:
-                try:
-                    imgs = json.loads(h.image_paths_json)
-                    img_count = len(imgs) if isinstance(imgs, list) else 0
-                except Exception:
-                    pass
-
-            date_str = fmt_vn(h.created_at, "%Y-%m-%d %H:%M", "")
-
-            data.append({
-                "ID": h.id,
-                "Sản phẩm": h.product_name,
-                "Tiêu đề": h.title,
-                "Website": site_name,
-                "Loại": "WooCommerce" if h.post_type == "product" else "Blog",
-                "Trạng thái": status_lbl,
-                "Ảnh": f"{img_count} ảnh" if img_count > 0 else "-",
-                "Giá gốc": h.regular_price or "-",
-                "Danh mục / Tag": tr.summarize_history(db, h, tax_cache),
-                "Ngày tạo (GMT+7)": date_str,
-                "Link WP": h.wp_post_url or "",
-            })
-
-        if not data:
-            return pd.DataFrame(columns=["ID", "Sản phẩm", "Tiêu đề", "Website", "Loại", "Trạng thái", "Ảnh", "Giá gốc", "Danh mục / Tag", "Ngày tạo (GMT+7)", "Link WP"])
-
-        return pd.DataFrame(data)
+        rows = post_service.list_posts(_site_arg(site_filter), _statuses(status_filter))
     except Exception as e:
         logger.error(f"Lỗi khi lấy kho bài viết: {e}")
         return pd.DataFrame()
-    finally:
-        db.close()
+
+    data = [{
+        "ID": r.id,
+        "Sản phẩm": r.product_name,
+        "Tiêu đề": r.title,
+        "Website": r.site_name,
+        "Loại": "WooCommerce" if r.post_type == "product" else "Blog",
+        "Trạng thái": _STATUS_LABELS.get(r.status, r.status),
+        "Ảnh": f"{r.image_count} ảnh" if r.image_count > 0 else "-",
+        "Giá gốc": r.regular_price or "-",
+        "Danh mục / Tag": r.taxonomy_summary,
+        "Ngày tạo (GMT+7)": fmt_vn(r.created_at, "%Y-%m-%d %H:%M", ""),
+        "Link WP": r.wp_post_url,
+    } for r in rows]
+    return pd.DataFrame(data) if data else pd.DataFrame(columns=_TABLE_COLUMNS)
 
 
-def get_history_post_choices(site_filter: str = "Tất cả", status_filter: str = "Tất cả") -> list[str]:
+def get_history_post_choices(site_filter: str = ALL, status_filter: str = ALL) -> list[str]:
     """Tạo danh sách lựa chọn bài viết cho Dropdown."""
-    db = SessionLocal()
-    try:
-        site_id = None
-        if site_filter and site_filter != "Tất cả":
-            site = crud.get_site_by_name(db, site_filter)
-            site_id = site.id if site else -1
+    choices = []
+    for r in post_service.list_posts(_site_arg(site_filter), _statuses(status_filter)):
+        status_text = "Đã lưu" if r.status == "saved" else ("Đã đăng" if r.status in ("published", "draft") else "Lỗi")
+        choices.append(f"#{r.id} - {r.product_name[:35]} ({r.site_name}) [{status_text}]")
+    return choices if choices else ["(Chưa có bài viết nào)"]
 
-        histories = crud.get_post_history(db, site_id=site_id, limit=200)
-        choices = []
-        for h in histories:
-            if status_filter and status_filter != "Tất cả":
-                if status_filter == "💾 Đã lưu nháp" and h.status != "saved":
-                    continue
-                elif status_filter == "✅ Đã đăng" and h.status not in ["published", "draft"]:
-                    continue
-                elif status_filter == "❌ Lỗi" and h.status != "failed":
-                    continue
 
-            site_name = h.site.name if h.site else "Site"
-            status_text = "Đã lưu" if h.status == "saved" else ("Đã đăng" if h.status in ["published", "draft"] else "Lỗi")
-            choices.append(f"#{h.id} - {h.product_name[:35]} ({site_name}) [{status_text}]")
+def _status_text(d: post_service.PostDetail) -> str:
+    if d.status == "saved":
+        return "💾 Đã lưu nháp trên Web"
+    return "✅ Đã đăng lên Website" if d.status == "published" else d.status
 
-        return choices if choices else ["(Chưa có bài viết nào)"]
-    finally:
-        db.close()
+
+def _info_md(d: post_service.PostDetail, date_label: str, date_value: str, image_count: int, status_text: str | None = None,
+             link_label: str = "Xem sản phẩm trên Web", extra: list[str] | None = None) -> str:
+    """Khung thông tin bài viết hiển thị phía trên form (dùng chung cho xem / lưu / đăng)."""
+    lines = [
+        f"### 📄 Bài viết #{d.id}: **{d.product_name}**",
+        f"- **Website đích:** `{d.site_name}` ({d.site_url})",
+        f"- **Trạng thái:** `{status_text or _status_text(d)}`",
+        f"- **Số lượng ảnh đính kèm:** {image_count} ảnh",
+        f"- **{date_label} ({TZ_LABEL}):** {date_value}",
+    ]
+    lines += extra or []
+    if d.wp_post_url:
+        lines.append(f"- **Link WordPress:** [{link_label}]({d.wp_post_url})")
+    return "\n".join(lines)
 
 
 def on_select_history_post(choice_str: str) -> tuple:
     """Tải thông tin chi tiết và hình ảnh của bài viết được chọn."""
     post_id = extract_id_from_choice(choice_str)
     if not post_id:
-        return "", "", "", "", "Sản phẩm WooCommerce", "draft", "", "", "*(Chưa chọn bài viết)*", None, None
+        return _NO_DETAIL
 
-    db = SessionLocal()
-    try:
-        h = crud.get_post_history_by_id(db, post_id)
-        if not h:
-            return "", "", "", "", "Sản phẩm WooCommerce", "draft", "", "", "❌ Không tìm thấy bài viết!", None, None
+    d = post_service.get_post(post_id)
+    if not d:
+        return "", "", "", "", "Sản phẩm WooCommerce", "draft", "", "", "❌ Không tìm thấy bài viết!", None, None
 
-        site_name = h.site.name if h.site else "Unknown"
-        post_type_label = "Sản phẩm WooCommerce" if h.post_type == "product" else "Bài viết Blog"
+    existing = d.existing_image_paths
+    extra = [f"- **Lỗi trước đó:** `{d.error_message}`"] if d.error_message else []
+    # (thứ tự dòng cũ: link WordPress rồi mới tới lỗi trước đó)
+    info_md = _info_md(d, "Ngày lưu", fmt_vn(d.created_at, "%Y-%m-%d %H:%M", ""), len(existing))
+    if extra:
+        info_md += "\n" + "\n".join(extra)
 
-        # Lấy danh sách ảnh hiện có trên ổ đĩa
-        image_paths = []
-        if h.image_paths_json:
-            try:
-                image_paths = json.loads(h.image_paths_json)
-            except Exception:
-                pass
-
-        existing_images = [p for p in image_paths if Path(p).exists()]
-        
-        info_lines = [
-            f"### 📄 Bài viết #{h.id}: **{h.product_name}**",
-            f"- **Website đích:** `{site_name}` ({h.site.url if h.site else ''})",
-            f"- **Trạng thái:** `{'💾 Đã lưu nháp trên Web' if h.status == 'saved' else ('✅ Đã đăng lên Website' if h.status == 'published' else h.status)}`",
-            f"- **Số lượng ảnh đính kèm:** {len(existing_images)} ảnh",
-            f"- **Ngày lưu ({TZ_LABEL}):** {fmt_vn(h.created_at, '%Y-%m-%d %H:%M', '')}",
-        ]
-        if h.wp_post_url:
-            info_lines.append(f"- **Link WordPress:** [Xem sản phẩm trên Web]({h.wp_post_url})")
-        if h.error_message:
-            info_lines.append(f"- **Lỗi trước đó:** `{h.error_message}`")
-
-        info_md = "\n".join(info_lines)
-
-        preview_html = pipeline.make_preview_html(h.raw_html, existing_images)
-
-        return (
-            h.title or "",
-            h.short_description or "",
-            h.regular_price or "",
-            h.sale_price or "",
-            post_type_label,
-            "draft",
-            preview_html,
-            h.raw_html or "",
-            info_md,
-            existing_images if existing_images else None,
-            None,
-        )
-    finally:
-        db.close()
+    return (
+        d.title,
+        d.short_description,
+        d.regular_price,
+        d.sale_price,
+        "Sản phẩm WooCommerce" if d.post_type == "product" else "Bài viết Blog",
+        "draft",
+        make_preview_html(d.raw_html, existing),
+        d.raw_html,
+        info_md,
+        existing if existing else None,
+        None,
+    )
 
 
 def on_save_history_edits(
@@ -185,75 +134,39 @@ def on_save_history_edits(
     sale_price: str,
     raw_html: str,
     new_images_input=None,
-    site_filter: str = "Tất cả",
-    status_filter: str = "Tất cả",
+    site_filter: str = ALL,
+    status_filter: str = ALL,
 ) -> tuple:
     """Lưu các thay đổi nội dung và hình ảnh của bài viết vào database, cập nhật bảng và giữ nguyên bài đang chọn."""
     post_id = extract_id_from_choice(choice_str)
     if not post_id:
         return "❌ Vui lòng chọn một bài viết để lưu!", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
-    db = SessionLocal()
     try:
-        h = crud.get_post_history_by_id(db, post_id)
-        if not h:
-            return "❌ Không tìm thấy bài viết để cập nhật!", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
-
-        h.title = title.strip()
-        h.short_description = short_desc.strip()
-        h.regular_price = reg_price.strip()
-        h.sale_price = sale_price.strip()
-        h.raw_html = raw_html.strip()
-
-        # Kiểm tra nếu người dùng tải lên danh sách ảnh mới
-        new_paths = extract_file_paths(new_images_input)
-        if new_paths:
-            h.image_paths_json = json.dumps(new_paths, ensure_ascii=False)
-            current_images = new_paths
-        else:
-            try:
-                current_images = json.loads(h.image_paths_json) if h.image_paths_json else []
-            except Exception:
-                current_images = []
-
-        db.commit()
-
-        existing_images = [p for p in current_images if Path(p).exists()]
-        updated_preview = pipeline.make_preview_html(h.raw_html, existing_images)
-
-        # Cập nhật danh sách choices và bảng dữ liệu mà vẫn giữ đúng post hiện tại
-        updated_df = fetch_history_data(site_filter, status_filter)
-        choices = get_history_post_choices(site_filter, status_filter)
-        current_choice = next((c for c in choices if c.startswith(f"#{h.id} - ")), choice_str)
-
-        site_name = h.site.name if h.site else "Unknown"
-        info_lines = [
-            f"### 📄 Bài viết #{h.id}: **{h.product_name}**",
-            f"- **Website đích:** `{site_name}` ({h.site.url if h.site else ''})",
-            f"- **Trạng thái:** `{'💾 Đã lưu nháp trên Web' if h.status == 'saved' else ('✅ Đã đăng lên Website' if h.status == 'published' else h.status)}`",
-            f"- **Số lượng ảnh đính kèm:** {len(existing_images)} ảnh",
-            f"- **Ngày cập nhật ({TZ_LABEL}):** {now_vn().strftime('%Y-%m-%d %H:%M')}",
-        ]
-        if h.wp_post_url:
-            info_lines.append(f"- **Link WordPress:** [Xem sản phẩm trên Web]({h.wp_post_url})")
-        info_md = "\n".join(info_lines)
-
-        gr.Info(f"✅ Đã lưu cập nhật cho bài #{h.id}!")
-        return (
-            f"✅ **Đã lưu cập nhật thành công cho bài #{h.id} ({h.product_name})!** (Hình ảnh: {len(existing_images)} ảnh)",
-            updated_preview,
-            existing_images if existing_images else None,
-            updated_df,
-            gr.update(choices=choices, value=current_choice),
-            info_md,
-            None,
+        d = post_service.save_post_edits(
+            post_id, title, short_desc, reg_price, sale_price, raw_html, extract_file_paths(new_images_input)
         )
+    except ServiceError as e:
+        return f"❌ {e.message}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
     except Exception as e:
-        db.rollback()
         logger.exception("Lỗi khi lưu bài viết đã chọn")
         return f"❌ Lỗi khi lưu: {str(e)}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
-    finally:
-        db.close()
+
+    existing = d.existing_image_paths
+    choices = get_history_post_choices(site_filter, status_filter)
+    current_choice = next((c for c in choices if c.startswith(f"#{d.id} - ")), choice_str)
+    info_md = _info_md(d, "Ngày cập nhật", now_vn().strftime("%Y-%m-%d %H:%M"), len(existing))
+
+    gr.Info(f"✅ Đã lưu cập nhật cho bài #{d.id}!")
+    return (
+        f"✅ **Đã lưu cập nhật thành công cho bài #{d.id} ({d.product_name})!** (Hình ảnh: {len(existing)} ảnh)",
+        make_preview_html(d.raw_html, existing),
+        existing if existing else None,
+        fetch_history_data(site_filter, status_filter),
+        gr.update(choices=choices, value=current_choice),
+        info_md,
+        None,
+    )
 
 
 def on_publish_history_post(
@@ -266,197 +179,93 @@ def on_publish_history_post(
     post_type: str,
     post_status: str,
     new_images_input=None,
-    site_filter: str = "Tất cả",
-    status_filter: str = "Tất cả",
+    site_filter: str = ALL,
+    status_filter: str = ALL,
 ) -> tuple:
     """Đăng ngay bài viết đã lưu kèm hình ảnh lên WordPress/WooCommerce và cập nhật trạng thái."""
     post_id = extract_id_from_choice(choice_str)
     if not post_id:
         return "❌ Vui lòng chọn một bài viết để đăng!", gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
-    db = SessionLocal()
     try:
-        h = crud.get_post_history_by_id(db, post_id)
-        if not h or not h.site:
-            return "❌ Không tìm thấy bài viết hoặc website cấu hình!", gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
-
-        site_config = crud.get_site_config(db, h.site_id)
-        if not site_config:
-            return "❌ Không tìm thấy thông tin xác thực của website!", gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
-
-        # Xác định hình ảnh đăng bài: ưu tiên ảnh mới upload, nếu không thì lấy ảnh đã lưu
-        new_paths = extract_file_paths(new_images_input)
-        if new_paths:
-            image_paths = new_paths
-            h.image_paths_json = json.dumps(new_paths, ensure_ascii=False)
-        else:
-            try:
-                image_paths = json.loads(h.image_paths_json) if h.image_paths_json else []
-            except Exception:
-                image_paths = []
-
-        valid_image_paths = [p for p in image_paths if Path(p).exists()]
-
-        # Tải ảnh lên WordPress Media Library
-        uploaded_images = []
-        image_warning = None
-        if valid_image_paths and site_config.get("wp_user") and site_config.get("wp_app_password"):
-            try:
-                uploaded_images = wp_client.upload_images(valid_image_paths, site_config)
-            except Exception as e:
-                image_warning = str(e)
-        elif valid_image_paths and not (site_config.get("wp_user") and site_config.get("wp_app_password")):
-            image_warning = "Chưa cấu hình WordPress Application Password ở tab Quản Lý Website nên chưa tải được ảnh lên WordPress."
-
-        # Xuất bản bài viết hoặc sản phẩm
-        is_product = "product" in post_type.lower() or "sản phẩm" in post_type.lower()
-
-        # Category/tag đã chọn lúc lưu nháp. Id category chỉ hợp lệ trong đúng loại nội dung (product/post)
-        # đã dùng khi chọn, nên bỏ qua nếu bây giờ đăng dưới loại khác.
-        from core import taxonomy_service
-        saved_scope = "product" if h.post_type == "product" else "post"
-        category_ids: list[int] = []
-        saved_category_ids: list[int] = []
-        try:
-            saved_category_ids = [int(c) for c in json.loads(h.category_ids_json or "[]")]
-        except Exception:
-            saved_category_ids = []
-        if saved_scope == ("product" if is_product else "post"):
-            category_ids = saved_category_ids
-        try:
-            saved_tags = json.loads(h.tags_json or "[]")
-        except Exception:
-            saved_tags = []
-        tag_ids, taxonomy_warning = taxonomy_service.resolve_tag_ids(site_config, post_type, saved_tags)
-
-        if is_product:
-            res = wp_client.publish_product(
-                title=title.strip() or h.product_name,
-                html_content=raw_html,
-                uploaded_images=uploaded_images,
-                site_config=site_config,
-                status=post_status,
-                regular_price=reg_price.strip(),
-                sale_price=sale_price.strip(),
-                short_description=short_desc.strip(),
-                category_ids=category_ids,
-                tag_ids=tag_ids,
-            )
-        else:
-            res = wp_client.publish_post(
-                title=title.strip() or h.product_name,
-                html_content=raw_html,
-                uploaded_images=uploaded_images,
-                site_config=site_config,
-                status=post_status,
-                category_ids=category_ids,
-                tag_ids=tag_ids,
-            )
-
-        # Cập nhật thông tin vào CSDL
-        h.title = title.strip()
-        h.raw_html = raw_html
-        h.short_description = short_desc.strip()
-        h.regular_price = reg_price.strip()
-        h.sale_price = sale_price.strip()
-        h.status = "published" if post_status == "publish" else "draft"
-        h.wp_post_id = str(res.get("post_id", ""))
-        h.wp_post_url = res.get("post_url")
-        h.published_at = now_vn()
-        h.error_message = None
-        db.commit()
-
-        status_badge = "🟢 Công khai" if post_status == "publish" else "📝 Nháp"
-        result_msg = (
-            f"### 🎉 Đăng thành công lên {h.site.name}!\n\n"
-            f"- **Trạng thái:** {status_badge}\n"
-            f"- **Hình ảnh tải lên WP:** {len(uploaded_images)}/{len(valid_image_paths)} ảnh\n"
-            f"- **Link xem:** [{res.get('post_url')}]({res.get('post_url')})\n"
-            f"- **Link sửa WP:** [Chỉnh sửa sản phẩm]({res.get('edit_url')})\n"
+        out = post_service.publish_saved_post(
+            post_id, title, short_desc, reg_price, sale_price, raw_html, post_type, post_status,
+            extract_file_paths(new_images_input),
         )
-        if image_warning:
-            result_msg += f"- ⚠️ *Cảnh báo ảnh:* {image_warning}\n"
-        if taxonomy_warning:
-            result_msg += f"- ⚠️ *Cảnh báo tag:* {taxonomy_warning}\n"
-        if saved_category_ids and not category_ids:
-            result_msg += (
-                "- ⚠️ *Danh mục đã lưu thuộc loại nội dung khác với loại đang đăng nên không được áp dụng.* "
-                "Hãy chọn lại danh mục ở mục 🏷️ rồi đăng lại nếu cần.\n"
-            )
-
-        gr.Info(f"🎉 Đã đăng thành công lên {h.site.name}!")
-        updated_table = fetch_history_data(site_filter, status_filter)
-        updated_choices = get_history_post_choices(site_filter, status_filter)
-        current_choice = next((c for c in updated_choices if c.startswith(f"#{h.id} - ")), None)
-
-        site_name = h.site.name if h.site else "Unknown"
-        info_lines = [
-            f"### 📄 Bài viết #{h.id}: **{h.product_name}**",
-            f"- **Website đích:** `{site_name}` ({h.site.url if h.site else ''})",
-            f"- **Trạng thái:** `✅ Đã đăng lên Website ({status_badge})`",
-            f"- **Số lượng ảnh đính kèm:** {len(valid_image_paths)} ảnh",
-            f"- **Ngày đăng ({TZ_LABEL}):** {fmt_vn(h.published_at, '%Y-%m-%d %H:%M', '')}",
-            f"- **Link WordPress:** [Xem sản phẩm trên Web]({res.get('post_url')})",
-        ]
-        info_md = "\n".join(info_lines)
-
-        return (
-            result_msg,
-            updated_table,
-            gr.update(choices=updated_choices, value=current_choice),
-            valid_image_paths if valid_image_paths else None,
-            info_md,
-            None,
-        )
-
+    except PublishError as e:
+        logger.error(f"Đăng bài đã lưu #{post_id} thất bại: {e.message}")
+        return f"❌ Đăng thất bại: {e.message}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+    except ServiceError as e:
+        return f"❌ {e.message}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
     except Exception as e:
         logger.exception("Lỗi khi đăng bài đã lưu")
         return f"❌ Đăng thất bại: {str(e)}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
-    finally:
-        db.close()
+
+    status_badge = "🟢 Công khai" if out.post_status == "publish" else "📝 Nháp"
+    result_msg = (
+        f"### 🎉 Đăng thành công lên {out.site_name}!\n\n"
+        f"- **Trạng thái:** {status_badge}\n"
+        f"- **Hình ảnh tải lên WP:** {out.uploaded_count}/{len(out.image_paths)} ảnh\n"
+        f"- **Link xem:** [{out.post_url}]({out.post_url})\n"
+        f"- **Link sửa WP:** [Chỉnh sửa sản phẩm]({out.edit_url})\n"
+    )
+    if out.image_warning:
+        result_msg += f"- ⚠️ *Cảnh báo ảnh:* {out.image_warning}\n"
+    if out.taxonomy_warning:
+        result_msg += f"- ⚠️ *Cảnh báo tag:* {out.taxonomy_warning}\n"
+    if out.category_warning:
+        result_msg += f"- ⚠️ *Cảnh báo danh mục:* {out.category_warning}\n"
+
+    gr.Info(f"🎉 Đã đăng thành công lên {out.site_name}!")
+    updated_choices = get_history_post_choices(site_filter, status_filter)
+    current_choice = next((c for c in updated_choices if c.startswith(f"#{out.post_id} - ")), None)
+
+    d = post_service.get_post(out.post_id)
+    info_md = "\n".join([
+        f"### 📄 Bài viết #{d.id}: **{d.product_name}**",
+        f"- **Website đích:** `{d.site_name}` ({d.site_url})",
+        f"- **Trạng thái:** `✅ Đã đăng lên Website ({status_badge})`",
+        f"- **Số lượng ảnh đính kèm:** {len(out.image_paths)} ảnh",
+        f"- **Ngày đăng ({TZ_LABEL}):** {fmt_vn(d.published_at, '%Y-%m-%d %H:%M', '')}",
+        f"- **Link WordPress:** [Xem sản phẩm trên Web]({out.post_url})",
+    ])
+    return (
+        result_msg,
+        fetch_history_data(site_filter, status_filter),
+        gr.update(choices=updated_choices, value=current_choice),
+        out.image_paths if out.image_paths else None,
+        info_md,
+        None,
+    )
 
 
-def on_delete_history_post(choice_str: str, site_filter: str = "Tất cả", status_filter: str = "Tất cả") -> tuple:
+def on_delete_history_post(choice_str: str, site_filter: str = ALL, status_filter: str = ALL) -> tuple:
     """Xóa bài viết khỏi CSDL và làm mới danh sách."""
     post_id = extract_id_from_choice(choice_str)
     if not post_id:
         return "❌ Vui lòng chọn bài viết cần xóa!", gr.update(), gr.update(), None, "*(Chưa chọn bài viết)*"
 
-    db = SessionLocal()
     try:
-        success = crud.delete_post_history(db, post_id)
-        if success:
-            gr.Info(f"🗑️ Đã xóa bài viết #{post_id}!")
-            msg = f"✅ Đã xóa thành công bài viết #{post_id} khỏi hệ thống."
-        else:
-            msg = f"❌ Không thể xóa bài viết #{post_id}."
-        
-        updated_table = fetch_history_data(site_filter, status_filter)
-        updated_choices = get_history_post_choices(site_filter, status_filter)
-        return (
-            msg,
-            updated_table,
-            gr.update(choices=updated_choices, value=updated_choices[0] if updated_choices else None),
-            None,
-            "*(Đã xóa bài viết - vui lòng chọn bài khác)*",
-        )
-    finally:
-        db.close()
+        post_service.delete_post(post_id)
+        gr.Info(f"🗑️ Đã xóa bài viết #{post_id}!")
+        msg = f"✅ Đã xóa thành công bài viết #{post_id} khỏi hệ thống."
+    except ServiceError as e:
+        msg = f"❌ {e.message}"
+
+    updated_choices = get_history_post_choices(site_filter, status_filter)
+    return (
+        msg,
+        fetch_history_data(site_filter, status_filter),
+        gr.update(choices=updated_choices, value=updated_choices[0] if updated_choices else None),
+        None,
+        "*(Đã xóa bài viết - vui lòng chọn bài khác)*",
+    )
 
 
 def build_tab_history(db_session=None) -> dict:
     """Xây dựng giao diện cho tab Kho Bài Viết & Lịch Sử Đăng."""
-    from db.database import SessionLocal
-    from db import crud
-
-    db = SessionLocal() if db_session is None else db_session
-    try:
-        site_names = crud.get_site_names(db)
-        filter_choices = ["Tất cả"] + site_names
-        initial_choices = get_history_post_choices()
-    finally:
-        if db_session is None:
-            db.close()
+    filter_choices = ["Tất cả"] + site_service.list_site_names()
+    initial_choices = get_history_post_choices()
 
     first_choice = initial_choices[0] if (initial_choices and not initial_choices[0].startswith("(")) else None
     (

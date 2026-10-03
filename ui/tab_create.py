@@ -26,7 +26,8 @@ def run_pipeline_ui(product_name, image_files, extra_urls_text, user_notes_text,
     """
     from db.database import SessionLocal
     from db import crud
-    from core.pipeline import generate_articles, make_preview_html
+    from core.pipeline import generate_articles
+    from ui.preview import make_preview_html
     
     empty_dropdown = gr.Dropdown(choices=["(Chưa có bài viết)"], value="(Chưa có bài viết)")
     if not product_name.strip():
@@ -526,7 +527,7 @@ def on_toggle_edit_mode(edit_mode_active, current_site, articles_state):
 def on_save_html_edit(new_html, current_site, articles_state, image_files):
     """Lưu mã HTML đã sửa vào articles_state và cập nhật lại bản preview."""
     if articles_state and current_site in articles_state:
-        from core.pipeline import make_preview_html
+        from ui.preview import make_preview_html
         image_paths = extract_file_paths(image_files)
         articles_state[current_site]['raw_html'] = new_html
         articles_state[current_site]['preview_html'] = make_preview_html(new_html, image_paths)

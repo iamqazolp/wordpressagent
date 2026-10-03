@@ -19,9 +19,14 @@ import re
 import gradio as gr
 
 from core import taxonomy_service
-from core.taxonomy_ai import category_labels
 from db import crud
 from db.database import SessionLocal
+from services.taxonomy import (
+    loads_list as _loads_list,
+    normalize_category_ids as _cat_ids,
+    scope_of as _scope_of,
+    summarize_selection,
+)
 from ui import taxonomy_panel as tp
 
 logger = logging.getLogger(__name__)
@@ -32,46 +37,6 @@ LOCKED_MSG = "🔒 Lịch này không còn ở trạng thái **chờ** nên khô
 
 
 # ── Hiển thị tóm tắt (dùng cho cột trong bảng) ───────────────────────────────
-
-def _scope_of(post_type: str | None) -> str:
-    return taxonomy_service.scope_for_post_type(post_type or "")
-
-
-def _loads_list(raw: str | None) -> list:
-    try:
-        val = json.loads(raw or "[]")
-        return val if isinstance(val, list) else []
-    except Exception:
-        return []
-
-
-def _label_map(db, site_name: str, scope: str, cache: dict | None = None) -> dict[int, str]:
-    key = (site_name, scope)
-    if cache is not None and key in cache:
-        return cache[key]
-    labels = category_labels(taxonomy_service.get_categories(db, site_name, scope))
-    if cache is not None:
-        cache[key] = labels
-    return labels
-
-
-def summarize_selection(db, site_name: str, scope: str, category_ids: list, tags: list, cache: dict | None = None) -> str:
-    """'📂 A, B · 🏷️ t1, t2' — tên danh mục tra từ cache; id lạ hiện '#id'. Trống -> '-'."""
-    labels = _label_map(db, site_name, scope, cache)
-    cats = []
-    for c in category_ids or []:
-        try:
-            cid = int(c)
-        except (TypeError, ValueError):
-            continue
-        cats.append(labels.get(cid) or f"#{cid}")
-    parts = []
-    if cats:
-        parts.append("📂 " + ", ".join(cats))
-    if tags:
-        parts.append("🏷️ " + ", ".join(str(t) for t in tags))
-    return " · ".join(parts) if parts else "-"
-
 
 def summarize_history(db, h, cache: dict | None = None) -> str:
     site_name = h.site.name if h.site else ""
@@ -123,18 +88,6 @@ def build_taxonomy_widgets(title_md: str, with_site_picker: bool = False, initia
             widgets["btn_sync"] = gr.Button("🔄 Làm mới danh mục", size="sm")
         widgets["status"] = gr.Markdown(value=initial_status)
     return widgets
-
-
-def _cat_ids(selected) -> list[int]:
-    out: list[int] = []
-    for c in selected or []:
-        try:
-            cid = int(c)
-        except (TypeError, ValueError):
-            continue
-        if cid not in out:
-            out.append(cid)
-    return out
 
 
 def _controls_with_warnings(db, art: dict, site: str, post_type: str, extra: str = "", interactive: bool = True):

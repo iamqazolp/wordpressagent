@@ -200,7 +200,8 @@ def test_scheduler_table_has_taxonomy_column(env, monkeypatch):
 
 def test_history_table_has_taxonomy_column(env, monkeypatch):
     Session, _ = env
+    from db import database
     from ui import tab_history
-    monkeypatch.setattr(tab_history, "SessionLocal", Session)
+    monkeypatch.setattr(database, "SessionLocal", Session)
     df = tab_history.fetch_history_data()
     assert df.iloc[0]["Danh mục / Tag"].startswith("📂 Quạt › Quạt công nghiệp")

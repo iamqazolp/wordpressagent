@@ -4,7 +4,7 @@ Orchestrator for running the end-to-end flow.
 """
 from __future__ import annotations
 import logging
-import re
+
 from typing import Callable
 
 from config import settings
@@ -89,6 +89,109 @@ def generate_articles(
     return articles
 
 
+def is_product_type(post_type: str) -> bool:
+    """'product' / 'Sản phẩm WooCommerce' -> True; còn lại (blog) -> False."""
+    t = (post_type or '').lower()
+    return 'product' in t or 'sản phẩm' in t
+
+
+def publish_one(
+    site_name: str,
+    site_config: dict,
+    article_data: dict,         # {'title','raw_html','short_description'?,'category_ids'?,'tags'?,'category_scope'?}
+    image_paths: list[str] | None,
+    post_type: str,             # 'product' | 'post' (hoặc nhãn hiển thị tương ứng)
+    post_status: str,           # 'draft' | 'publish'
+    regular_price: str = "",
+    sale_price: str = "",
+    optimize_images: bool = True,
+    remove_bg: bool = False,
+) -> dict:
+    """
+    Đăng MỘT bài lên MỘT website: tải ảnh -> tra category/tag -> tạo sản phẩm/bài viết.
+    Không raise: lỗi đăng trả về {'success': False, 'error': ...}. Lỗi ảnh/tag chỉ là cảnh báo.
+    Kết quả thành công có thêm: uploaded_count, category_warning (id danh mục đã chọn nhưng bị bỏ do
+    khác loại nội dung), image_warning, taxonomy_warning.
+    """
+    if not site_config:
+        return {'site_name': site_name, 'success': False, 'error': 'Không tìm thấy cấu hình website'}
+
+    # Upload images if possible
+    uploaded = []
+    image_warning = None
+    image_paths = image_paths or []
+    if image_paths:
+        if site_config.get('wp_user') and site_config.get('wp_app_password'):
+            try:
+                uploaded = wp_client.upload_images(
+                    image_paths,
+                    site_config,
+                    optimize=optimize_images,
+                    remove_bg=remove_bg,
+                )
+                if not uploaded:
+                    image_warning = "Tải ảnh thất bại (vui lòng kiểm tra lại quyền WordPress Application Password)."
+            except Exception as e:
+                logger.warning(f'Upload ảnh thất bại tại {site_name}: {e}')
+                image_warning = f"Lỗi upload ảnh: {e}"
+        else:
+            image_warning = "Chưa cấu hình WordPress Username & Application Password ở tab Quản Lý Website nên chưa tải được ảnh lên WordPress."
+
+    title = article_data.get('title', '')
+    raw_html = article_data.get('raw_html', '')
+    short_desc = article_data.get('short_description', '')
+
+    # Category (id theo từng site) và tag (tên -> id, tạo nếu chưa có). Lỗi tag chỉ cảnh báo, không chặn đăng.
+    category_ids = taxonomy_service.effective_category_ids(article_data, post_type)
+    category_warning = None
+    if article_data.get('category_ids') and not category_ids:
+        category_warning = (
+            "Danh mục đã chọn thuộc loại nội dung khác với loại đang đăng nên không được áp dụng. "
+            "Hãy chọn lại danh mục cho đúng loại rồi đăng lại nếu cần."
+        )
+    tag_ids, taxonomy_warning = taxonomy_service.resolve_tag_ids(
+        site_config, post_type, article_data.get('tags') or []
+    )
+
+    try:
+        if is_product_type(post_type):
+            res = wp_client.publish_product(
+                title=title,
+                html_content=raw_html,
+                uploaded_images=uploaded,
+                site_config=site_config,
+                status=post_status,
+                regular_price=regular_price,
+                sale_price=sale_price,
+                short_description=short_desc,
+                category_ids=category_ids,
+                tag_ids=tag_ids,
+            )
+        else:
+            if not site_config.get('wp_user'):
+                return {'site_name': site_name, 'success': False, 'error': 'Chưa cấu hình WP_USER để đăng Blog Post'}
+            res = wp_client.publish_post(
+                title=title, html_content=raw_html,
+                uploaded_images=uploaded, site_config=site_config,
+                status=post_status,
+                category_ids=category_ids,
+                tag_ids=tag_ids,
+            )
+        return {
+            'site_name': site_name, 'success': True,
+            'post_id': res.get('post_id'), 'post_url': res.get('post_url'),
+            'edit_url': res.get('edit_url'), 'status': res.get('status'),
+            'uploaded_count': len(uploaded),
+            'image_warning': image_warning,
+            'taxonomy_warning': taxonomy_warning,
+            'category_warning': category_warning,
+            'error': None,
+        }
+    except Exception as e:
+        logger.exception(f'Lỗi đăng bài lên {site_name}')
+        return {'site_name': site_name, 'success': False, 'error': str(e)}
+
+
 def publish_articles(
     articles: dict[str, dict],       # {site_name: {'title': str, 'raw_html': str, 'short_description'?: str}}
     image_files: list[str] | None,
@@ -107,101 +210,22 @@ def publish_articles(
     """
     results = []
     total = len(articles)
-    
+
     for i, (site_name, article_data) in enumerate(articles.items(), 1):
         if progress_callback:
             progress_callback(i / total, f'📤 Đang đăng lên {site_name} ({i}/{total})...')
-        
-        site_config = site_configs.get(site_name)
-        if not site_config:
-            results.append({'site_name': site_name, 'success': False, 'error': 'Không tìm thấy cấu hình website'})
-            continue
-        
-        # Upload images if possible
-        uploaded = []
-        image_warning = None
-        image_paths = image_files or []
-        if image_paths:
-            if site_config.get('wp_user') and site_config.get('wp_app_password'):
-                try:
-                    uploaded = wp_client.upload_images(
-                        image_paths,
-                        site_config,
-                        optimize=optimize_images,
-                        remove_bg=remove_bg,
-                    )
-                    if not uploaded:
-                        image_warning = "Tải ảnh thất bại (vui lòng kiểm tra lại quyền WordPress Application Password)."
-                except Exception as e:
-                    logger.warning(f'Upload ảnh thất bại tại {site_name}: {e}')
-                    image_warning = f"Lỗi upload ảnh: {e}"
-            else:
-                image_warning = "Chưa cấu hình WordPress Username & Application Password ở tab Quản Lý Website nên chưa tải được ảnh lên WordPress."
 
-        title = article_data.get('title', '')
-        raw_html = article_data.get('raw_html', '')
-        short_desc = article_data.get('short_description', '')
+        results.append(publish_one(
+            site_name,
+            site_configs.get(site_name),
+            article_data,
+            image_files,
+            post_type,
+            post_status,
+            regular_price=regular_price,
+            sale_price=sale_price,
+            optimize_images=optimize_images,
+            remove_bg=remove_bg,
+        ))
 
-        # Category (id theo từng site) và tag (tên -> id, tạo nếu chưa có). Lỗi tag chỉ cảnh báo, không chặn đăng.
-        category_ids = taxonomy_service.effective_category_ids(article_data, post_type)
-        tag_ids, taxonomy_warning = taxonomy_service.resolve_tag_ids(
-            site_config, post_type, article_data.get('tags') or []
-        )
-
-        try:
-            if 'product' in post_type.lower() or 'sản phẩm' in post_type.lower():
-                res = wp_client.publish_product(
-                    title=title,
-                    html_content=raw_html,
-                    uploaded_images=uploaded,
-                    site_config=site_config,
-                    status=post_status,
-                    regular_price=regular_price,
-                    sale_price=sale_price,
-                    short_description=short_desc,
-                    category_ids=category_ids,
-                    tag_ids=tag_ids,
-                )
-            else:
-                if not site_config.get('wp_user'):
-                    results.append({'site_name': site_name, 'success': False, 'error': 'Chưa cấu hình WP_USER để đăng Blog Post'})
-                    continue
-                res = wp_client.publish_post(
-                    title=title, html_content=raw_html,
-                    uploaded_images=uploaded, site_config=site_config,
-                    status=post_status,
-                    category_ids=category_ids,
-                    tag_ids=tag_ids,
-                )
-            results.append({
-                'site_name': site_name, 'success': True,
-                'post_id': res.get('post_id'), 'post_url': res.get('post_url'),
-                'edit_url': res.get('edit_url'), 'status': res.get('status'),
-                'image_warning': image_warning,
-                'taxonomy_warning': taxonomy_warning,
-                'error': None,
-            })
-        except Exception as e:
-            logger.exception(f'Lỗi đăng bài lên {site_name}')
-            results.append({'site_name': site_name, 'success': False, 'error': str(e)})
-    
     return results
-
-
-def make_preview_html(html_content: str, image_files: list[str] | None) -> str:
-    """Thay [IMAGE_PLACEHOLDER_N] bằng ảnh local để preview."""
-    if not image_files:
-        return re.sub(r'\[IMAGE_PLACEHOLDER_\d+\]', '', html_content)
-    
-    paths = image_files if isinstance(image_files[0], str) else [f.name for f in image_files]
-    
-    def replace_placeholder(match):
-        n = int(match.group(1)) - 1
-        idx = min(n, len(paths) - 1)
-        return (
-            f'<figure style="text-align:center;margin:20px 0;">'
-            f'<img src="/file={paths[idx]}" style="max-width:100%;height:auto;border-radius:4px;" />'
-            f'</figure>'
-        )
-    
-    return re.sub(r'\[IMAGE_PLACEHOLDER_(\d+)\]', replace_placeholder, html_content)

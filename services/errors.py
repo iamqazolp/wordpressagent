@@ -12,3 +12,7 @@ class ServiceError(Exception):
     def __init__(self, message: str):
         super().__init__(message)
         self.message = message
+
+
+class PublishError(ServiceError):
+    """Đăng lên WordPress thất bại (khác với lỗi dữ liệu đầu vào: không tìm thấy bài, thiếu cấu hình...)."""

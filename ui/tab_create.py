@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 from PIL import Image
 import gradio as gr
 
@@ -336,6 +337,84 @@ def handle_preview_processed_images(
 
 
 
+def parse_scheduled_datetime(val: Any) -> datetime | None:
+    """Chuyển đổi linh hoạt các định dạng ngày giờ sang datetime object."""
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val
+    if isinstance(val, (int, float)):
+        return datetime.fromtimestamp(val)
+    if isinstance(val, str):
+        val = val.strip()
+        if not val:
+            return None
+        for fmt in (
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d %H:%M",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%dT%H:%M",
+            "%d/%m/%Y %H:%M",
+            "%d/%m/%Y %H:%M:%S",
+        ):
+            try:
+                return datetime.strptime(val, fmt)
+            except ValueError:
+                continue
+    return None
+
+
+def format_time_preview(dt_val: Any) -> str:
+    """Tạo dòng thông báo thời gian dự kiến đăng bài thân thiện với người dùng."""
+    dt = parse_scheduled_datetime(dt_val)
+    if not dt:
+        return "⚠️ *Chưa chọn thời gian hợp lệ.*"
+    now = datetime.now()
+    if dt <= now:
+        return f"⚠️ **Thời gian đã qua hoặc quá gần hiện tại:** `{dt.strftime('%d/%m/%Y %H:%M')}`. Vui lòng chọn thời điểm trong tương lai."
+    diff = dt - now
+    total_seconds = int(diff.total_seconds())
+    days = total_seconds // 86400
+    hours = (total_seconds % 86400) // 3600
+    minutes = (total_seconds % 3600) // 60
+
+    parts = []
+    if days > 0:
+        parts.append(f"{days} ngày")
+    if hours > 0:
+        parts.append(f"{hours} giờ")
+    if minutes > 0 or not parts:
+        parts.append(f"{minutes} phút")
+    human_diff = " ".join(parts)
+
+    weekday_names = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"]
+    weekday = weekday_names[dt.weekday()]
+    return f"🕒 **Dự kiến đăng vào:** `{dt.strftime('%H:%M')} - {weekday}, ngày {dt.strftime('%d/%m/%Y')}` *(sau khoảng {human_diff} nữa)*"
+
+
+def set_quick_schedule(preset_type: str) -> tuple[datetime, str]:
+    """Tính toán mốc thời gian đăng nhanh và trả về datetime cùng chuỗi diễn giải."""
+    now = datetime.now()
+    if preset_type == "30m":
+        target = now + timedelta(minutes=30)
+    elif preset_type == "1h":
+        target = now + timedelta(hours=1)
+    elif preset_type == "2h":
+        target = now + timedelta(hours=2)
+    elif preset_type == "tomorrow_8am":
+        tomorrow = now + timedelta(days=1)
+        target = tomorrow.replace(hour=8, minute=0, second=0, microsecond=0)
+    elif preset_type == "tomorrow_14pm":
+        tomorrow = now + timedelta(days=1)
+        target = tomorrow.replace(hour=14, minute=0, second=0, microsecond=0)
+    elif preset_type == "tomorrow_20pm":
+        tomorrow = now + timedelta(days=1)
+        target = tomorrow.replace(hour=20, minute=0, second=0, microsecond=0)
+    else:
+        target = now + timedelta(hours=1)
+    return target, format_time_preview(target)
+
+
 def schedule_post_ui(
     articles_state,
     image_files,
@@ -343,37 +422,21 @@ def schedule_post_ui(
     post_type,
     regular_price="",
     sale_price="",
-    delay_type="Sau số phút",
-    delay_value="30",
+    scheduled_datetime=None,
 ) -> str:
-    """Lên lịch đăng bài tự động qua APScheduler."""
+    """Lên lịch đăng bài tự động qua APScheduler bằng bộ chọn ngày giờ trực quan."""
     if not articles_state:
         return "❌ Chưa có nội dung bài viết nào để lên lịch! Hãy tạo bài viết trước."
 
-    from datetime import datetime, timedelta
     from core.scheduler import schedule_publish_job
 
     now = datetime.now()
-    val_str = str(delay_value).strip()
+    target_time = parse_scheduled_datetime(scheduled_datetime)
+    if not target_time:
+        return "❌ Vui lòng chọn ngày và giờ đăng bài hợp lệ."
 
-    try:
-        if "phút" in delay_type.lower():
-            minutes = int(val_str) if val_str else 30
-            if minutes < 1:
-                return "❌ Số phút hẹn phải lớn hơn hoặc bằng 1."
-            target_time = now + timedelta(minutes=minutes)
-        elif "giờ" in delay_type.lower():
-            hours = float(val_str) if val_str else 1.0
-            if hours <= 0:
-                return "❌ Số giờ hẹn phải lớn hơn 0."
-            target_time = now + timedelta(hours=hours)
-        else:
-            # Parse datetime string
-            target_time = datetime.strptime(val_str, "%Y-%m-%d %H:%M")
-            if target_time <= now:
-                return f"❌ Thời gian hẹn ({val_str}) phải ở trong tương lai (sau hiện tại: {now.strftime('%Y-%m-%d %H:%M')})."
-    except Exception as e:
-        return f"❌ Định dạng thời gian hẹn không hợp lệ: {e}. Ví dụ: '30' (phút), hoặc '2026-09-27 15:30'"
+    if target_time <= now:
+        return f"❌ Thời gian hẹn ({target_time.strftime('%d/%m/%Y %H:%M')}) phải ở trong tương lai (sau hiện tại: {now.strftime('%d/%m/%Y %H:%M')})."
 
     image_paths = _extract_file_paths(image_files)
     first_site = list(articles_state.keys())[0]
@@ -393,11 +456,13 @@ def schedule_post_ui(
         )
 
         sites_count = len(articles_state)
+        weekday_names = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"]
+        weekday = weekday_names[target_time.weekday()]
         return (
             f"### ⏰ Đặt Lịch Đăng Thành Công!\n"
             f"- **Mã lịch hẹn (Job ID):** `#{job_id}`\n"
             f"- **Sản phẩm:** {prod_name}\n"
-            f"- **Thời gian đăng dự kiến:** `{target_time.strftime('%d/%m/%Y %H:%M')}`\n"
+            f"- **Thời gian đăng dự kiến:** `{target_time.strftime('%H:%M')} - {weekday}, ngày {target_time.strftime('%d/%m/%Y')}`\n"
             f"- **Áp dụng cho:** {sites_count} website ({', '.join(articles_state.keys())})\n"
             f"- **Trạng thái:** Sẽ tự động đăng dưới dạng `{post_status}`\n\n"
             f"👉 *Bạn có thể theo dõi tiến độ hoặc hủy lịch bất kỳ lúc nào tại tab **📅 Lịch Đăng Bài**.*"
@@ -621,20 +686,65 @@ def build_tab_create(db_session=None) -> dict:
     publish_result = gr.Markdown()
 
     with gr.Accordion("⏰ Lên lịch hẹn giờ đăng tự động (Post Scheduler)", open=False):
-        gr.Markdown("Hẹn giờ đăng bài tự động mà không cần treo máy hoặc đăng ngay lập tức. Hệ thống sẽ tự động đăng vào thời điểm được chỉ định.")
+        gr.Markdown(
+            "Hẹn giờ đăng bài tự động mà không cần treo máy hoặc đăng ngay lập tức. "
+            "Bạn có thể chọn nhanh các mốc thời gian phổ biến hoặc chọn trực tiếp ngày & giờ trên giao diện lịch."
+        )
+        gr.Markdown("**⚡ Chọn nhanh mốc thời gian:**")
         with gr.Row():
-            schedule_type = gr.Radio(
-                label="Kiểu hẹn giờ",
-                choices=["Sau số phút", "Sau số giờ", "Thời gian cụ thể (YYYY-MM-DD HH:MM)"],
-                value="Sau số phút",
+            btn_quick_30m = gr.Button("⚡ +30 phút", size="sm")
+            btn_quick_1h = gr.Button("⚡ +1 giờ", size="sm")
+            btn_quick_2h = gr.Button("⚡ +2 giờ", size="sm")
+            btn_quick_tomorrow_8am = gr.Button("🌅 Sáng mai (08:00)", size="sm")
+            btn_quick_tomorrow_14pm = gr.Button("☀️ Chiều mai (14:00)", size="sm")
+            btn_quick_tomorrow_20pm = gr.Button("🌙 Tối mai (20:00)", size="sm")
+
+        with gr.Row():
+            default_init_time = datetime.now() + timedelta(hours=1)
+            schedule_datetime_picker = gr.DateTime(
+                label="📅 Chọn ngày & giờ đăng bài (Lịch & Đồng hồ trực quan)",
+                type="datetime",
+                value=default_init_time,
+                include_time=True,
             )
-            schedule_val = gr.Textbox(
-                label="Giá trị thời gian",
-                value="30",
-                placeholder="VD: 30 (phút), hoặc 2 (giờ), hoặc 2026-09-27 16:00",
-            )
+
+        schedule_time_preview = gr.Markdown(
+            value=format_time_preview(default_init_time)
+        )
+
         schedule_btn = gr.Button("⏰ Xác nhận Lên Lịch Đăng", variant="primary", size="lg")
         schedule_result = gr.Markdown()
+
+    # Sự kiện chọn nhanh lịch hẹn & tương tác DateTime picker
+    btn_quick_30m.click(
+        fn=lambda: set_quick_schedule("30m"),
+        outputs=[schedule_datetime_picker, schedule_time_preview],
+    )
+    btn_quick_1h.click(
+        fn=lambda: set_quick_schedule("1h"),
+        outputs=[schedule_datetime_picker, schedule_time_preview],
+    )
+    btn_quick_2h.click(
+        fn=lambda: set_quick_schedule("2h"),
+        outputs=[schedule_datetime_picker, schedule_time_preview],
+    )
+    btn_quick_tomorrow_8am.click(
+        fn=lambda: set_quick_schedule("tomorrow_8am"),
+        outputs=[schedule_datetime_picker, schedule_time_preview],
+    )
+    btn_quick_tomorrow_14pm.click(
+        fn=lambda: set_quick_schedule("tomorrow_14pm"),
+        outputs=[schedule_datetime_picker, schedule_time_preview],
+    )
+    btn_quick_tomorrow_20pm.click(
+        fn=lambda: set_quick_schedule("tomorrow_20pm"),
+        outputs=[schedule_datetime_picker, schedule_time_preview],
+    )
+    schedule_datetime_picker.change(
+        fn=format_time_preview,
+        inputs=[schedule_datetime_picker],
+        outputs=[schedule_time_preview],
+    )
 
     # Sự kiện xem trước ảnh đã tối ưu & đóng watermark
     btn_preview_images.click(
@@ -677,8 +787,7 @@ def build_tab_create(db_session=None) -> dict:
         'save_draft_btn': save_draft_btn,
         'publish_btn': publish_btn,
         'publish_result': publish_result,
-        'schedule_type': schedule_type,
-        'schedule_val': schedule_val,
+        'schedule_datetime_picker': schedule_datetime_picker,
         'schedule_btn': schedule_btn,
         'schedule_result': schedule_result,
         'img_optimize_chk': img_optimize_chk,

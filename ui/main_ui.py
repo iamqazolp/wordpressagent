@@ -21,11 +21,17 @@ from ui.tab_history import (
 
 logger = logging.getLogger(__name__)
 
-
+force_light_js = """                                                                                                                                           
+     () => {
+         document.body.classList.remove('dark');
+     }
+""" 
 def create_app() -> gr.Blocks:
     """Build and return the complete Gradio Blocks app."""
     with gr.Blocks(
         title="WordPress Agent - Đa Website & Tự Động Hóa",
+        theme=gr.themes.Soft(),
+        js=force_light_js
     ) as demo:
         # State lưu trữ danh sách bài viết theo từng site: {site_name: {title, raw_html, preview_html}}
         articles_state = gr.State({})
@@ -240,8 +246,7 @@ def create_app() -> gr.Blocks:
                 create_comps['post_type_selector'],
                 create_comps['regular_price_input'],
                 create_comps['sale_price_input'],
-                create_comps['schedule_type'],
-                create_comps['schedule_val'],
+                create_comps['schedule_datetime_picker'],
             ],
             outputs=[create_comps['schedule_result']],
         )

@@ -1,7 +1,13 @@
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# Khóa mã hóa riêng cho test, đặt TRƯỚC khi db.crud được import: tránh đọc/ghi ENCRYPTION_KEY thật trong .env.
+from cryptography.fernet import Fernet
+
+os.environ["ENCRYPTION_KEY"] = Fernet.generate_key().decode()
 
 import pytest
 from sqlalchemy import create_engine

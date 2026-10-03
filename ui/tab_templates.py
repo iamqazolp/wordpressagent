@@ -1,26 +1,26 @@
 from __future__ import annotations
 
 import gradio as gr
-from db.database import SessionLocal
-from db import crud
+
+from services import templates as template_service
+from services.errors import ServiceError
 
 NEW_TEMPLATE_CHOICE = '➕ Tạo mới'
 CATEGORIES = ['industrial', 'electronics', 'general', 'fashion', 'custom']
 
-def _get_template_choices(db=None) -> list[str]:
+
+def _get_template_choices() -> list[str]:
     """Return list of template names for dropdown, with '➕ Tạo mới' at the start."""
-    local_db = False
-    if db is None:
-        db = SessionLocal()
-        local_db = True
-        
-    try:
-        templates = crud.get_all_templates(db)
-        choices = [NEW_TEMPLATE_CHOICE] + [t.name for t in templates if t.name]
-        return choices
-    finally:
-        if local_db:
-            db.close()
+    return [NEW_TEMPLATE_CHOICE] + template_service.list_template_names()
+
+
+def _create_tab_choices(choices: list[str]) -> list[str]:
+    return ['(Mặc định)'] + [c for c in choices if c != NEW_TEMPLATE_CHOICE]
+
+
+def _error(msg: str) -> tuple:
+    return (f"❌ {msg}", gr.Dropdown(), gr.Dropdown(), gr.Dropdown())
+
 
 def on_select_template(selected_choice: str) -> tuple:
     """When user selects a template from dropdown, populate form fields.
@@ -28,24 +28,12 @@ def on_select_template(selected_choice: str) -> tuple:
     If '➕ Tạo mới', clear all fields."""
     if not selected_choice or selected_choice == NEW_TEMPLATE_CHOICE:
         return ("", "general", "", False, "")
-        
-    db = SessionLocal()
-    try:
-        templates = crud.get_all_templates(db)
-        template = next((t for t in templates if t.name == selected_choice), None)
-        
-        if template:
-            return (
-                template.name,
-                template.category or "general",
-                template.content or "",
-                template.is_default or False,
-                ""
-            )
-        else:
-            return ("", "general", "", False, "❌ Không tìm thấy template.")
-    finally:
-        db.close()
+
+    template = template_service.get_template(selected_choice)
+    if not template:
+        return ("", "general", "", False, "❌ Không tìm thấy template.")
+    return (template.name, template.category, template.content, template.is_default, "")
+
 
 def handle_save_template(name: str, category: str, content: str, is_default: bool, current_selection: str) -> tuple:
     """Save (create or update) template.
@@ -53,81 +41,40 @@ def handle_save_template(name: str, category: str, content: str, is_default: boo
     Otherwise, find template by name from current_selection and update.
     Returns: (status_msg, updated_dropdown, updated_dropdown_value, template_choices_for_create_tab)
     """
-    if not name or not name.strip():
-        return ("❌ Tên template không được để trống.", gr.Dropdown(), gr.Dropdown(), gr.Dropdown())
-        
-    if not content or not content.strip():
-        return ("❌ Nội dung template không được để trống.", gr.Dropdown(), gr.Dropdown(), gr.Dropdown())
-        
-    db = SessionLocal()
+    current = None if (not current_selection or current_selection == NEW_TEMPLATE_CHOICE) else current_selection
     try:
-        templates = crud.get_all_templates(db)
-        
-        if not current_selection or current_selection == NEW_TEMPLATE_CHOICE:
-            # Create new
-            existing = next((t for t in templates if t.name == name), None)
-            if existing:
-                return ("❌ Tên template đã tồn tại. Vui lòng chọn tên khác.", gr.Dropdown(), gr.Dropdown(), gr.Dropdown())
-                
-            crud.create_template(db, name=name, content=content, category=category, is_default=is_default)
-            msg = "✅ Đã tạo template thành công."
-        else:
-            # Update existing
-            template = next((t for t in templates if t.name == current_selection), None)
-            if not template:
-                return ("❌ Không tìm thấy template để cập nhật.", gr.Dropdown(), gr.Dropdown(), gr.Dropdown())
-                
-            # If name changed, check for duplicate
-            if name != current_selection:
-                existing = next((t for t in templates if t.name == name), None)
-                if existing:
-                    return ("❌ Tên template mới đã tồn tại. Vui lòng chọn tên khác.", gr.Dropdown(), gr.Dropdown(), gr.Dropdown())
-            
-            crud.update_template(db, template.id, name=name, content=content, category=category, is_default=is_default)
-            msg = "✅ Đã cập nhật template thành công."
-            
-        choices = _get_template_choices(db)
-        create_tab_choices = ['(Mặc định)'] + [c for c in choices if c != NEW_TEMPLATE_CHOICE]
-        
-        return (
-            msg,
-            gr.Dropdown(choices=choices, value=name),
-            name,
-            gr.Dropdown(choices=create_tab_choices)
-        )
-    finally:
-        db.close()
+        _, created = template_service.save_template(name, category, content, is_default, current)
+    except ServiceError as e:
+        return _error(e.message)
+
+    msg = "✅ Đã tạo template thành công." if created else "✅ Đã cập nhật template thành công."
+    choices = _get_template_choices()
+    return (
+        msg,
+        gr.Dropdown(choices=choices, value=name),
+        name,
+        gr.Dropdown(choices=_create_tab_choices(choices)),
+    )
+
 
 def handle_delete_template(current_selection: str) -> tuple:
     """Delete the selected template.
     Returns: (status_msg, updated_dropdown, updated_dropdown_value, template_choices_for_create_tab)"""
     if not current_selection or current_selection == NEW_TEMPLATE_CHOICE:
-        return ("❌ Vui lòng chọn một template để xóa.", gr.Dropdown(), gr.Dropdown(), gr.Dropdown())
-        
-    db = SessionLocal()
+        return _error("Vui lòng chọn một template để xóa.")
     try:
-        templates = crud.get_all_templates(db)
-        template = next((t for t in templates if t.name == current_selection), None)
-        
-        if not template:
-            return ("❌ Không tìm thấy template để xóa.", gr.Dropdown(), gr.Dropdown(), gr.Dropdown())
-            
-        success = crud.delete_template(db, template.id)
-        if success:
-            msg = "✅ Đã xóa template thành công."
-            choices = _get_template_choices(db)
-            create_tab_choices = ['(Mặc định)'] + [c for c in choices if c != NEW_TEMPLATE_CHOICE]
-            
-            return (
-                msg,
-                gr.Dropdown(choices=choices, value=NEW_TEMPLATE_CHOICE),
-                NEW_TEMPLATE_CHOICE,
-                gr.Dropdown(choices=create_tab_choices)
-            )
-        else:
-            return ("❌ Có lỗi xảy ra khi xóa template.", gr.Dropdown(), gr.Dropdown(), gr.Dropdown())
-    finally:
-        db.close()
+        template_service.delete_template(current_selection)
+    except ServiceError as e:
+        return _error(e.message)
+
+    choices = _get_template_choices()
+    return (
+        "✅ Đã xóa template thành công.",
+        gr.Dropdown(choices=choices, value=NEW_TEMPLATE_CHOICE),
+        NEW_TEMPLATE_CHOICE,
+        gr.Dropdown(choices=_create_tab_choices(choices)),
+    )
+
 
 def build_tab_templates() -> dict:
     """Build the template management tab. Returns dict of components."""

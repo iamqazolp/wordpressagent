@@ -34,13 +34,13 @@ def get_db():
 def _backup_db_file(tag: str = "manual") -> Path | None:
     """Sao lưu DB bằng sqlite3 backup API (an toàn khi app đang chạy). Giữ tối đa 10 bản gần nhất."""
     import sqlite3
-    from datetime import datetime
+    from core.timeutil import now_vn
 
     if not DB_PATH.exists():
         return None
     backup_dir = DATA_DIR / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
-    dest = backup_dir / f"wordpress_agent_{tag}_{datetime.now():%Y%m%d_%H%M%S}.db"
+    dest = backup_dir / f"wordpress_agent_{tag}_{now_vn():%Y%m%d_%H%M%S}.db"
     src = sqlite3.connect(str(DB_PATH))
     dst = sqlite3.connect(str(dest))
     try:

@@ -9,6 +9,7 @@ from apscheduler.triggers.date import DateTrigger
 from db.database import SessionLocal
 from db import crud
 from core.pipeline import publish_articles
+from core.timeutil import now_vn, TZ_NAME
 from core import taxonomy_service
 
 logger = logging.getLogger(__name__)
@@ -20,7 +21,7 @@ def get_scheduler() -> BackgroundScheduler:
     """Khởi tạo hoặc lấy BackgroundScheduler singleton."""
     global _scheduler
     if _scheduler is None:
-        _scheduler = BackgroundScheduler(timezone="Asia/Ho_Chi_Minh")
+        _scheduler = BackgroundScheduler(timezone=TZ_NAME)
         _scheduler.start()
         logger.info("✓ APScheduler đã được khởi động.")
     return _scheduler
@@ -92,7 +93,7 @@ def execute_scheduled_job(job_id: int):
             job_id,
             status=final_status,
             result_message=summary_msg,
-            executed_at=datetime.now(),
+            executed_at=now_vn(),
         )
         logger.info(f"✓ Hoàn tất scheduled job #{job_id}: {summary_msg}")
     except Exception as e:
@@ -103,7 +104,7 @@ def execute_scheduled_job(job_id: int):
                 job_id,
                 status="failed",
                 result_message=f"Lỗi: {str(e)}",
-                executed_at=datetime.now(),
+                executed_at=now_vn(),
             )
         except Exception:
             pass
@@ -177,7 +178,7 @@ def init_scheduler():
     db = SessionLocal()
     try:
         pending_jobs = crud.get_scheduled_posts(db, status="pending")
-        now = datetime.now()
+        now = now_vn()
         loaded_count = 0
         for job in pending_jobs:
             if job.scheduled_time and job.scheduled_time > now:

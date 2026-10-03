@@ -12,6 +12,7 @@ from core.image_processor import (
     format_processing_summary,
 )
 from core import taxonomy_service
+from core.timeutil import now_vn, to_vn_naive, VN_TZ, TZ_LABEL, TZ_NAME
 from ui.seo_panel import EMPTY_PANEL as EMPTY_SEO_PANEL
 
 logger = logging.getLogger(__name__)
@@ -350,9 +351,9 @@ def parse_scheduled_datetime(val: Any) -> datetime | None:
     if val is None:
         return None
     if isinstance(val, datetime):
-        return val
+        return to_vn_naive(val)
     if isinstance(val, (int, float)):
-        return datetime.fromtimestamp(val)
+        return to_vn_naive(datetime.fromtimestamp(val, VN_TZ))
     if isinstance(val, str):
         val = val.strip()
         if not val:
@@ -377,9 +378,9 @@ def format_time_preview(dt_val: Any) -> str:
     dt = parse_scheduled_datetime(dt_val)
     if not dt:
         return "⚠️ *Chưa chọn thời gian hợp lệ.*"
-    now = datetime.now()
+    now = now_vn()
     if dt <= now:
-        return f"⚠️ **Thời gian đã qua hoặc quá gần hiện tại:** `{dt.strftime('%d/%m/%Y %H:%M')}`. Vui lòng chọn thời điểm trong tương lai."
+        return f"⚠️ **Thời gian đã qua hoặc quá gần hiện tại:** `{dt.strftime('%d/%m/%Y %H:%M')} ({TZ_LABEL})`. Vui lòng chọn thời điểm trong tương lai."
     diff = dt - now
     total_seconds = int(diff.total_seconds())
     days = total_seconds // 86400
@@ -397,12 +398,12 @@ def format_time_preview(dt_val: Any) -> str:
 
     weekday_names = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"]
     weekday = weekday_names[dt.weekday()]
-    return f"🕒 **Dự kiến đăng vào:** `{dt.strftime('%H:%M')} - {weekday}, ngày {dt.strftime('%d/%m/%Y')}` *(sau khoảng {human_diff} nữa)*"
+    return f"🕒 **Dự kiến đăng vào:** `{dt.strftime('%H:%M')} ({TZ_LABEL}) - {weekday}, ngày {dt.strftime('%d/%m/%Y')}` *(sau khoảng {human_diff} nữa)*"
 
 
 def set_quick_schedule(preset_type: str) -> tuple[datetime, str]:
     """Tính toán mốc thời gian đăng nhanh và trả về datetime cùng chuỗi diễn giải."""
-    now = datetime.now()
+    now = now_vn()
     if preset_type == "30m":
         target = now + timedelta(minutes=30)
     elif preset_type == "1h":
@@ -438,13 +439,13 @@ def schedule_post_ui(
 
     from core.scheduler import schedule_publish_job
 
-    now = datetime.now()
+    now = now_vn()
     target_time = parse_scheduled_datetime(scheduled_datetime)
     if not target_time:
         return "❌ Vui lòng chọn ngày và giờ đăng bài hợp lệ."
 
     if target_time <= now:
-        return f"❌ Thời gian hẹn ({target_time.strftime('%d/%m/%Y %H:%M')}) phải ở trong tương lai (sau hiện tại: {now.strftime('%d/%m/%Y %H:%M')})."
+        return f"❌ Thời gian hẹn ({target_time.strftime('%d/%m/%Y %H:%M')} {TZ_LABEL}) phải ở trong tương lai (sau hiện tại: {now.strftime('%d/%m/%Y %H:%M')} {TZ_LABEL})."
 
     image_paths = _extract_file_paths(image_files)
     first_site = list(articles_state.keys())[0]
@@ -470,7 +471,7 @@ def schedule_post_ui(
             f"### ⏰ Đặt Lịch Đăng Thành Công!\n"
             f"- **Mã lịch hẹn (Job ID):** `#{job_id}`\n"
             f"- **Sản phẩm:** {prod_name}\n"
-            f"- **Thời gian đăng dự kiến:** `{target_time.strftime('%H:%M')} - {weekday}, ngày {target_time.strftime('%d/%m/%Y')}`\n"
+            f"- **Thời gian đăng dự kiến:** `{target_time.strftime('%H:%M')} ({TZ_LABEL}) - {weekday}, ngày {target_time.strftime('%d/%m/%Y')}`\n"
             f"- **Áp dụng cho:** {sites_count} website ({', '.join(articles_state.keys())})\n"
             f"- **Trạng thái:** Sẽ tự động đăng dưới dạng `{post_status}`\n\n"
             f"👉 *Bạn có thể theo dõi tiến độ hoặc hủy lịch bất kỳ lúc nào tại tab **📅 Lịch Đăng Bài**.*"
@@ -731,10 +732,11 @@ def build_tab_create(db_session=None) -> dict:
             btn_quick_tomorrow_20pm = gr.Button("🌙 Tối mai (20:00)", size="sm")
 
         with gr.Row():
-            default_init_time = datetime.now() + timedelta(hours=1)
+            default_init_time = now_vn() + timedelta(hours=1)
             schedule_datetime_picker = gr.DateTime(
-                label="📅 Chọn ngày & giờ đăng bài (Lịch & Đồng hồ trực quan)",
+                label=f"📅 Chọn ngày & giờ đăng bài ({TZ_LABEL} · Giờ Việt Nam)",
                 type="datetime",
+                timezone=TZ_NAME,
                 value=default_init_time,
                 include_time=True,
             )

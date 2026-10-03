@@ -11,6 +11,7 @@ from sqlalchemy import desc
 
 from datetime import datetime, timedelta
 
+from core.timeutil import now_vn
 from db.models import Site, PostHistory, PromptTemplate, ScheduledPost, SiteTaxonomy
 
 from dotenv import load_dotenv
@@ -588,7 +589,7 @@ def replace_site_categories(db: Session, site_id: int, scope: str, categories: l
             SiteTaxonomy.kind == "category",
             SiteTaxonomy.scope == scope,
         ).delete(synchronize_session=False)
-        now = datetime.now()
+        now = now_vn()
         seen: set[int] = set()
         for c in categories:
             wp_id = int(c["id"])
@@ -632,4 +633,4 @@ def is_categories_stale(db: Session, site_id: int, scope: str, now: datetime | N
     fetched = get_categories_fetched_at(db, site_id, scope)
     if fetched is None:
         return True
-    return (now or datetime.now()) - fetched > TAXONOMY_TTL
+    return (now or now_vn()) - fetched > TAXONOMY_TTL

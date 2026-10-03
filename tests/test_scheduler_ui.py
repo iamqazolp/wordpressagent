@@ -3,6 +3,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from datetime import datetime, timedelta
+from core.timeutil import now_vn
 from ui.tab_create import (
     parse_scheduled_datetime,
     format_time_preview,
@@ -12,7 +13,7 @@ from ui.tab_create import (
 
 
 def test_parse_scheduled_datetime():
-    now = datetime.now()
+    now = now_vn()
     # 1. Datetime object
     assert parse_scheduled_datetime(now) == now
 
@@ -45,18 +46,18 @@ def test_format_time_preview():
     assert "Chưa chọn" in format_time_preview(None)
 
     # 2. Past time
-    past = datetime.now() - timedelta(minutes=10)
+    past = now_vn() - timedelta(minutes=10)
     assert "Thời gian đã qua" in format_time_preview(past)
 
     # 3. Future time
-    future = datetime.now() + timedelta(hours=2, minutes=15)
+    future = now_vn() + timedelta(hours=2, minutes=15)
     preview = format_time_preview(future)
     assert "Dự kiến đăng vào" in preview
     assert "sau khoảng" in preview
 
 
 def test_set_quick_schedule():
-    now = datetime.now()
+    now = now_vn()
     # Test +30m
     dt_30m, preview_30m = set_quick_schedule("30m")
     diff_30m = (dt_30m - now).total_seconds() / 60
@@ -80,7 +81,7 @@ def test_schedule_post_ui_validations():
     assert "Chưa có nội dung" in res1
 
     # 2. Past time
-    past = datetime.now() - timedelta(minutes=5)
+    past = now_vn() - timedelta(minutes=5)
     articles = {"site1": {"title": "Test Title", "raw_html": "<p>Content</p>"}}
     res2 = schedule_post_ui(articles, [], "publish", "post", scheduled_datetime=past)
     assert "phải ở trong tương lai" in res2

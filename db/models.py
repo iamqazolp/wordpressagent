@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey, Float, UniqueConstraint
-from sqlalchemy.sql import func
+from core.timeutil import now_vn
 from sqlalchemy.orm import relationship
 
 from db.database import Base
@@ -19,8 +19,8 @@ class Site(Base):
     watermark_path = Column(String(500), default="", nullable=True)
     watermark_position = Column(String(50), default="bottom-right", nullable=True)
     watermark_opacity = Column(Float, default=0.7, nullable=True)
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime, default=now_vn)
+    updated_at = Column(DateTime, default=now_vn, onupdate=now_vn)
 
     posts = relationship('PostHistory', back_populates='site', cascade='all, delete-orphan')
     taxonomies = relationship('SiteTaxonomy', back_populates='site', cascade='all, delete-orphan')
@@ -45,7 +45,7 @@ class PostHistory(Base):
     image_paths_json = Column(Text, nullable=True, default="[]")
     category_ids_json = Column(Text, nullable=True, default="[]")   # JSON [wp_category_id, ...] (id theo từng site)
     tags_json = Column(Text, nullable=True, default="[]")           # JSON ["tag name", ...] (tạo/tra id lúc đăng)
-    created_at = Column(DateTime, default=func.now())
+    created_at = Column(DateTime, default=now_vn)
     published_at = Column(DateTime, nullable=True)
 
     site = relationship('Site', back_populates='posts')
@@ -59,8 +59,8 @@ class PromptTemplate(Base):
     category = Column(String(50), default="general")
     content = Column(Text, nullable=False)
     is_default = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime, default=now_vn)
+    updated_at = Column(DateTime, default=now_vn, onupdate=now_vn)
 
 
 class ScheduledPost(Base):
@@ -78,7 +78,7 @@ class ScheduledPost(Base):
     scheduled_time = Column(DateTime, nullable=False)     # When to run
     status = Column(String(20), default="pending")        # pending, running, completed, failed, cancelled
     result_message = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=func.now())
+    created_at = Column(DateTime, default=now_vn)
     executed_at = Column(DateTime, nullable=True)
 
 
@@ -94,6 +94,6 @@ class SiteTaxonomy(Base):
     wp_id = Column(Integer, nullable=False)
     name = Column(String(300), nullable=False)
     parent_id = Column(Integer, nullable=True)
-    fetched_at = Column(DateTime, default=func.now())
+    fetched_at = Column(DateTime, default=now_vn)
 
     site = relationship("Site", back_populates="taxonomies")

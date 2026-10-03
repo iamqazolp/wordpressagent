@@ -9,6 +9,7 @@ from datetime import datetime
 from db.database import SessionLocal
 from db import crud
 from core.scheduler import cancel_scheduled_job
+from core.timeutil import fmt_vn
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ def fetch_scheduler_data() -> pd.DataFrame:
         jobs = crud.get_scheduled_posts(db, limit=100)
         if not jobs:
             return pd.DataFrame(columns=[
-                "ID", "Sản phẩm", "Website", "Thời gian hẹn", "Trạng thái", "Thời gian chạy", "Kết quả"
+                "ID", "Sản phẩm", "Website", "Thời gian hẹn (GMT+7)", "Trạng thái", "Thời gian chạy (GMT+7)", "Kết quả"
             ])
 
         rows = []
@@ -43,16 +44,16 @@ def fetch_scheduler_data() -> pd.DataFrame:
             }
             status_display = status_map.get(j.status, j.status)
 
-            sched_time_str = j.scheduled_time.strftime("%d/%m/%Y %H:%M") if j.scheduled_time else "-"
-            exec_time_str = j.executed_at.strftime("%d/%m/%Y %H:%M") if j.executed_at else "-"
+            sched_time_str = fmt_vn(j.scheduled_time)
+            exec_time_str = fmt_vn(j.executed_at)
 
             rows.append({
                 "ID": j.id,
                 "Sản phẩm": j.product_name,
                 "Website": sites_str,
-                "Thời gian hẹn": sched_time_str,
+                "Thời gian hẹn (GMT+7)": sched_time_str,
                 "Trạng thái": status_display,
-                "Thời gian chạy": exec_time_str,
+                "Thời gian chạy (GMT+7)": exec_time_str,
                 "Kết quả": j.result_message or "-",
             })
 

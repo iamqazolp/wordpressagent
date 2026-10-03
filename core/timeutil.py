@@ -1,0 +1,32 @@
+"""Tiện ích thời gian: toàn bộ hệ thống dùng giờ Việt Nam (GMT+7).
+
+Quy ước: DB lưu datetime *naive* theo giờ tường (wall-clock) GMT+7.
+Dùng offset cố định (Việt Nam không có DST) nên không cần tzdata.
+"""
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+VN_TZ = timezone(timedelta(hours=7), "GMT+7")
+TZ_LABEL = "GMT+7"
+# Tên IANA dùng cho thư viện cần tên múi giờ (APScheduler, gr.DateTime)
+TZ_NAME = "Asia/Ho_Chi_Minh"
+
+
+def now_vn() -> datetime:
+    """Giờ hiện tại ở GMT+7, dạng naive (để lưu/so sánh với dữ liệu DB)."""
+    return datetime.now(VN_TZ).replace(tzinfo=None)
+
+
+def to_vn_naive(dt: Optional[datetime]) -> Optional[datetime]:
+    """Chuẩn hóa datetime về naive GMT+7. Naive được coi là đã ở GMT+7."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone(VN_TZ).replace(tzinfo=None)
+
+
+def fmt_vn(dt: Optional[datetime], fmt: str = "%d/%m/%Y %H:%M", empty: str = "-") -> str:
+    """Định dạng datetime (đã ở GMT+7) để hiển thị."""
+    dt = to_vn_naive(dt)
+    return dt.strftime(fmt) if dt else empty

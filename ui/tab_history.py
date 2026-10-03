@@ -10,6 +10,7 @@ import pandas as pd
 from db.database import SessionLocal
 from db import crud
 from core import wp_client, pipeline
+from core.timeutil import now_vn, fmt_vn, TZ_LABEL
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +86,7 @@ def fetch_history_data(site_filter: str = "Tất cả", status_filter: str = "T�
                 except Exception:
                     pass
 
-            date_str = h.created_at.strftime("%Y-%m-%d %H:%M") if h.created_at else ""
+            date_str = fmt_vn(h.created_at, "%Y-%m-%d %H:%M", "")
 
             data.append({
                 "ID": h.id,
@@ -96,12 +97,12 @@ def fetch_history_data(site_filter: str = "Tất cả", status_filter: str = "T�
                 "Trạng thái": status_lbl,
                 "Ảnh": f"{img_count} ảnh" if img_count > 0 else "-",
                 "Giá gốc": h.regular_price or "-",
-                "Ngày tạo": date_str,
+                "Ngày tạo (GMT+7)": date_str,
                 "Link WP": h.wp_post_url or "",
             })
 
         if not data:
-            return pd.DataFrame(columns=["ID", "Sản phẩm", "Tiêu đề", "Website", "Loại", "Trạng thái", "Ảnh", "Giá gốc", "Ngày tạo", "Link WP"])
+            return pd.DataFrame(columns=["ID", "Sản phẩm", "Tiêu đề", "Website", "Loại", "Trạng thái", "Ảnh", "Giá gốc", "Ngày tạo (GMT+7)", "Link WP"])
 
         return pd.DataFrame(data)
     except Exception as e:
@@ -170,7 +171,7 @@ def on_select_history_post(choice_str: str) -> tuple:
             f"- **Website đích:** `{site_name}` ({h.site.url if h.site else ''})",
             f"- **Trạng thái:** `{'💾 Đã lưu nháp trên Web' if h.status == 'saved' else ('✅ Đã đăng lên Website' if h.status == 'published' else h.status)}`",
             f"- **Số lượng ảnh đính kèm:** {len(existing_images)} ảnh",
-            f"- **Ngày lưu:** {h.created_at.strftime('%Y-%m-%d %H:%M') if h.created_at else ''}",
+            f"- **Ngày lưu ({TZ_LABEL}):** {fmt_vn(h.created_at, '%Y-%m-%d %H:%M', '')}",
         ]
         if h.wp_post_url:
             info_lines.append(f"- **Link WordPress:** [Xem sản phẩm trên Web]({h.wp_post_url})")
@@ -253,7 +254,7 @@ def on_save_history_edits(
             f"- **Website đích:** `{site_name}` ({h.site.url if h.site else ''})",
             f"- **Trạng thái:** `{'💾 Đã lưu nháp trên Web' if h.status == 'saved' else ('✅ Đã đăng lên Website' if h.status == 'published' else h.status)}`",
             f"- **Số lượng ảnh đính kèm:** {len(existing_images)} ảnh",
-            f"- **Ngày cập nhật:** {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            f"- **Ngày cập nhật ({TZ_LABEL}):** {now_vn().strftime('%Y-%m-%d %H:%M')}",
         ]
         if h.wp_post_url:
             info_lines.append(f"- **Link WordPress:** [Xem sản phẩm trên Web]({h.wp_post_url})")
@@ -381,7 +382,7 @@ def on_publish_history_post(
         h.status = "published" if post_status == "publish" else "draft"
         h.wp_post_id = str(res.get("post_id", ""))
         h.wp_post_url = res.get("post_url")
-        h.published_at = datetime.now()
+        h.published_at = now_vn()
         h.error_message = None
         db.commit()
 
@@ -409,7 +410,7 @@ def on_publish_history_post(
             f"- **Website đích:** `{site_name}` ({h.site.url if h.site else ''})",
             f"- **Trạng thái:** `✅ Đã đăng lên Website ({status_badge})`",
             f"- **Số lượng ảnh đính kèm:** {len(valid_image_paths)} ảnh",
-            f"- **Ngày đăng:** {h.published_at.strftime('%Y-%m-%d %H:%M') if h.published_at else ''}",
+            f"- **Ngày đăng ({TZ_LABEL}):** {fmt_vn(h.published_at, '%Y-%m-%d %H:%M', '')}",
             f"- **Link WordPress:** [Xem sản phẩm trên Web]({res.get('post_url')})",
         ]
         info_md = "\n".join(info_lines)
@@ -515,7 +516,7 @@ def build_tab_history(db_session=None) -> dict:
 
     history_table = gr.Dataframe(
         value=fetch_history_data("Tất cả", "Tất cả"),
-        headers=["ID", "Sản phẩm", "Tiêu đề", "Website", "Loại", "Trạng thái", "Ảnh", "Giá gốc", "Ngày tạo", "Link WP"],
+        headers=["ID", "Sản phẩm", "Tiêu đề", "Website", "Loại", "Trạng thái", "Ảnh", "Giá gốc", "Ngày tạo (GMT+7)", "Link WP"],
         interactive=False,
         wrap=True,
     )

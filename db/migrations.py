@@ -83,9 +83,36 @@ def _m002_taxonomy(conn: Connection) -> None:
     conn.execute(text("CREATE INDEX IF NOT EXISTS ix_site_taxonomy_site_id ON site_taxonomy (site_id)"))
 
 
+def _m003_utc_to_gmt7(conn: Connection) -> None:
+    """
+    Chuyển mốc thời gian cũ do SQLite CURRENT_TIMESTAMP ghi (UTC) sang GMT+7.
+    Chỉ dịch các giá trị có dạng 'YYYY-MM-DD HH:MM:SS' (không có phần micro-giây): đó là dấu hiệu
+    của CURRENT_TIMESTAMP; giá trị do ứng dụng ghi (đã là giờ VN) luôn có micro-giây nên giữ nguyên.
+    Không đụng tới published_at / executed_at / scheduled_time / fetched_at (vốn đã là giờ local).
+    """
+    targets = {
+        "sites": ["created_at", "updated_at"],
+        "post_history": ["created_at"],
+        "prompt_templates": ["created_at", "updated_at"],
+        "scheduled_posts": ["created_at"],
+    }
+    for table, cols in targets.items():
+        if not table_exists(conn, table):
+            continue
+        existing = column_names(conn, table)
+        for col in cols:
+            if col not in existing:
+                continue
+            conn.execute(text(
+                f"UPDATE {table} SET {col} = datetime({col}, '+7 hours') "
+                f"WHERE {col} IS NOT NULL AND {col} NOT LIKE '%.%'"
+            ))
+
+
 MIGRATIONS: list[Migration] = [
     (1, "baseline_columns", _m001_baseline_columns),
     (2, "taxonomy", _m002_taxonomy),
+    (3, "utc_to_gmt7", _m003_utc_to_gmt7),
 ]
 
 

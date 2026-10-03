@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timedelta
+from core.timeutil import now_vn
 
 import pytest
 import requests
@@ -229,8 +230,8 @@ def test_staleness_ttl(db):
     assert crud.is_categories_stale(db, sid, "product")  # chưa có cache
     crud.replace_site_categories(db, sid, "product", [_cat(1)])
     assert not crud.is_categories_stale(db, sid, "product")
-    assert crud.is_categories_stale(db, sid, "product", now=datetime.now() + timedelta(hours=25))
-    assert not crud.is_categories_stale(db, sid, "product", now=datetime.now() + timedelta(hours=23))
+    assert crud.is_categories_stale(db, sid, "product", now=now_vn() + timedelta(hours=25))
+    assert not crud.is_categories_stale(db, sid, "product", now=now_vn() + timedelta(hours=23))
 
 
 def test_deleting_site_removes_its_taxonomy(db):

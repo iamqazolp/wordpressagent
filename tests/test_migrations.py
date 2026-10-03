@@ -101,3 +101,27 @@ def test_migration_2_adds_taxonomy_columns_and_table(engine):
         cols = column_names(conn, "site_taxonomy")
         assert {"site_id", "kind", "scope", "wp_id", "name", "parent_id", "fetched_at"} <= cols
         assert get_schema_version(conn) >= 2
+
+
+def test_m003_shifts_only_utc_current_timestamp_values(engine):
+    """CURRENT_TIMESTAMP (UTC, không micro-giây) được +7h; giá trị app ghi (có micro-giây) giữ nguyên."""
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE sites (id INTEGER PRIMARY KEY, created_at DATETIME, updated_at DATETIME)"))
+        conn.execute(text("CREATE TABLE post_history (id INTEGER PRIMARY KEY, created_at DATETIME, published_at DATETIME)"))
+        conn.execute(text("INSERT INTO sites VALUES (1, '2026-10-03 07:12:44', NULL)"))
+        conn.execute(text("INSERT INTO sites VALUES (2, '2026-10-03 14:12:44.123456', '2026-10-03 14:12:44.000001')"))
+        conn.execute(text("INSERT INTO post_history VALUES (1, '2026-10-03 23:30:00', '2026-10-03 10:00:00')"))
+
+    run_migrations(engine)
+
+    with engine.connect() as conn:
+        rows = {r[0]: r[1:] for r in conn.execute(text("SELECT id, created_at, updated_at FROM sites"))}
+        assert rows[1] == ("2026-10-03 14:12:44", None)
+        assert rows[2] == ("2026-10-03 14:12:44.123456", "2026-10-03 14:12:44.000001")
+        ph = conn.execute(text("SELECT created_at, published_at FROM post_history")).fetchone()
+        # qua nửa đêm → sang ngày hôm sau; published_at không bị đụng tới
+        assert ph == ("2026-10-04 06:30:00", "2026-10-03 10:00:00")
+
+    run_migrations(engine)  # chạy lại không dịch thêm lần nữa
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT created_at FROM sites WHERE id=1")).scalar() == "2026-10-03 14:12:44"

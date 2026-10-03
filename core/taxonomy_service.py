@@ -89,7 +89,7 @@ def cache_status_text(db: Session, site_name: str, scope: str) -> str:
         return "ℹ️ Chưa có danh mục của website này — bấm **🔄 Làm mới danh mục**."
     n = len(crud.get_site_categories(db, site.id, scope))
     stale = " ⚠️ *cache đã cũ (>24h), nên làm mới*" if crud.is_categories_stale(db, site.id, scope) else ""
-    return f"📂 {n} danh mục · cập nhật {fetched.strftime('%d/%m %H:%M')}{stale}"
+    return f"📂 {n} danh mục · cập nhật {fetched.strftime('%d/%m %H:%M')} (GMT+7){stale}"
 
 
 def resolve_tag_ids(site_config: dict, post_type: str, tag_names: list[str]) -> tuple[list[int], str | None]:

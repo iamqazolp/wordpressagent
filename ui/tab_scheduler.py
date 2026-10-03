@@ -10,6 +10,7 @@ from db.database import SessionLocal
 from db import crud
 from core.scheduler import cancel_scheduled_job
 from core.timeutil import fmt_vn
+from ui import taxonomy_records as tr
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +22,11 @@ def fetch_scheduler_data() -> pd.DataFrame:
         jobs = crud.get_scheduled_posts(db, limit=100)
         if not jobs:
             return pd.DataFrame(columns=[
-                "ID", "Sản phẩm", "Website", "Thời gian hẹn (GMT+7)", "Trạng thái", "Thời gian chạy (GMT+7)", "Kết quả"
+                "ID", "Sản phẩm", "Website", "Danh mục & Tag", "Thời gian hẹn (GMT+7)", "Trạng thái", "Thời gian chạy (GMT+7)", "Kết quả"
             ])
 
         rows = []
+        tax_cache: dict = {}  # tên danh mục theo (site, loại) — tránh truy vấn lặp cho từng dòng
         for j in jobs:
             # Parse sites
             try:
@@ -51,6 +53,7 @@ def fetch_scheduler_data() -> pd.DataFrame:
                 "ID": j.id,
                 "Sản phẩm": j.product_name,
                 "Website": sites_str,
+                "Danh mục & Tag": tr.summarize_job(db, j, tax_cache),
                 "Thời gian hẹn (GMT+7)": sched_time_str,
                 "Trạng thái": status_display,
                 "Thời gian chạy (GMT+7)": exec_time_str,
@@ -133,6 +136,15 @@ def build_tab_scheduler() -> dict:
         with gr.Column(scale=2):
             action_status = gr.Markdown("")
 
+    tax = tr.build_taxonomy_widgets(
+        "#### 🏷️ Danh mục & Tag của lịch đăng\n"
+        "*Bấm vào một dòng trong bảng (hoặc nhập ID ở trên) rồi chỉnh. Chỉ sửa được khi lịch còn **chờ**; "
+        "thay đổi được lưu ngay và áp dụng khi đến giờ đăng.*",
+        with_site_picker=True,
+        initial_status=tr.NO_JOB_MSG,
+    )
+    tax_outputs = [tax["categories"], tax["tags"], tax["status"]]
+
     # Events
     refresh_btn.click(
         fn=fetch_scheduler_data,
@@ -152,7 +164,37 @@ def build_tab_scheduler() -> dict:
         outputs=[jobs_table, action_status],
     )
 
+    def _on_row_select(evt: gr.SelectData):
+        """Bấm vào dòng -> điền ID lịch đăng (cột đầu tiên)."""
+        try:
+            row = evt.row_value
+            return str(row[0]) if row else gr.update()
+        except Exception:
+            return gr.update()
+
+    jobs_table.select(fn=_on_row_select, inputs=[], outputs=[job_id_input]).then(
+        fn=tr.sched_load, inputs=[job_id_input], outputs=[tax["site"], *tax_outputs]
+    )
+    job_id_input.submit(fn=tr.sched_load, inputs=[job_id_input], outputs=[tax["site"], *tax_outputs])
+    job_id_input.blur(fn=tr.sched_load, inputs=[job_id_input], outputs=[tax["site"], *tax_outputs])
+    tax["site"].input(fn=tr.sched_site_change, inputs=[job_id_input, tax["site"]], outputs=tax_outputs)
+    # Lưu xong mới làm mới bảng (chuỗi .then) để cột "Danh mục & Tag" luôn khớp dữ liệu vừa lưu
+    tax["categories"].input(
+        fn=tr.sched_save_categories, inputs=[tax["categories"], job_id_input, tax["site"]], outputs=[tax["status"]]
+    ).then(fn=fetch_scheduler_data, inputs=[], outputs=[jobs_table])
+    tax["tags"].blur(
+        fn=tr.sched_save_tags, inputs=[tax["tags"], job_id_input, tax["site"]], outputs=[tax["status"]]
+    ).then(fn=fetch_scheduler_data, inputs=[], outputs=[jobs_table])
+    tax["tags"].submit(
+        fn=tr.sched_save_tags, inputs=[tax["tags"], job_id_input, tax["site"]], outputs=[tax["status"]]
+    ).then(fn=fetch_scheduler_data, inputs=[], outputs=[jobs_table])
+    tax["btn_ai"].click(fn=tr.sched_ai_suggest, inputs=[job_id_input, tax["site"]], outputs=tax_outputs).then(
+        fn=fetch_scheduler_data, inputs=[], outputs=[jobs_table]
+    )
+    tax["btn_sync"].click(fn=tr.sched_sync, inputs=[job_id_input, tax["site"]], outputs=tax_outputs)
+
     return {
+        "taxonomy": tax,
         "refresh_btn": refresh_btn,
         "jobs_table": jobs_table,
         "job_id_input": job_id_input,

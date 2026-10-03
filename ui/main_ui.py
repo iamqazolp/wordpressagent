@@ -14,6 +14,7 @@ from ui.taxonomy_panel import (
 )
 from ui.tab_bulk import build_tab_bulk
 from ui.tab_scheduler import build_tab_scheduler
+from ui.taxonomy_records import history_load as history_load_taxonomy
 from ui.tab_templates import (
     build_tab_templates, handle_save_template, handle_delete_template
 )
@@ -325,6 +326,10 @@ def create_app() -> gr.Blocks:
             fn=on_select_history_post,
             inputs=[history_comps['post_selector']],
             outputs=history_detail_outputs,
+        ).then(
+            fn=history_load_taxonomy,
+            inputs=[history_comps['post_selector'], history_comps['post_type_selector']],
+            outputs=[history_comps['taxonomy']['categories'], history_comps['taxonomy']['tags'], history_comps['taxonomy']['status']],
         )
 
         # =====================================================================

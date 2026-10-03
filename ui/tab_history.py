@@ -11,6 +11,7 @@ from db.database import SessionLocal
 from db import crud
 from core import wp_client, pipeline
 from core.timeutil import now_vn, fmt_vn, TZ_LABEL
+from ui import taxonomy_records as tr
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ def fetch_history_data(site_filter: str = "Tất cả", status_filter: str = "T�
         histories = crud.get_post_history(db, site_id=site_id, limit=200)
 
         data = []
+        tax_cache: dict = {}  # tên danh mục theo (site, loại) — tránh truy vấn lặp cho từng dòng
         for h in histories:
             site_name = h.site.name if h.site else "Unknown"
 
@@ -97,12 +99,13 @@ def fetch_history_data(site_filter: str = "Tất cả", status_filter: str = "T�
                 "Trạng thái": status_lbl,
                 "Ảnh": f"{img_count} ảnh" if img_count > 0 else "-",
                 "Giá gốc": h.regular_price or "-",
+                "Danh mục / Tag": tr.summarize_history(db, h, tax_cache),
                 "Ngày tạo (GMT+7)": date_str,
                 "Link WP": h.wp_post_url or "",
             })
 
         if not data:
-            return pd.DataFrame(columns=["ID", "Sản phẩm", "Tiêu đề", "Website", "Loại", "Trạng thái", "Ảnh", "Giá gốc", "Ngày tạo (GMT+7)", "Link WP"])
+            return pd.DataFrame(columns=["ID", "Sản phẩm", "Tiêu đề", "Website", "Loại", "Trạng thái", "Ảnh", "Giá gốc", "Danh mục / Tag", "Ngày tạo (GMT+7)", "Link WP"])
 
         return pd.DataFrame(data)
     except Exception as e:
@@ -338,11 +341,13 @@ def on_publish_history_post(
         from core import taxonomy_service
         saved_scope = "product" if h.post_type == "product" else "post"
         category_ids: list[int] = []
+        saved_category_ids: list[int] = []
+        try:
+            saved_category_ids = [int(c) for c in json.loads(h.category_ids_json or "[]")]
+        except Exception:
+            saved_category_ids = []
         if saved_scope == ("product" if is_product else "post"):
-            try:
-                category_ids = [int(c) for c in json.loads(h.category_ids_json or "[]")]
-            except Exception:
-                category_ids = []
+            category_ids = saved_category_ids
         try:
             saved_tags = json.loads(h.tags_json or "[]")
         except Exception:
@@ -398,6 +403,11 @@ def on_publish_history_post(
             result_msg += f"- ⚠️ *Cảnh báo ảnh:* {image_warning}\n"
         if taxonomy_warning:
             result_msg += f"- ⚠️ *Cảnh báo tag:* {taxonomy_warning}\n"
+        if saved_category_ids and not category_ids:
+            result_msg += (
+                "- ⚠️ *Danh mục đã lưu thuộc loại nội dung khác với loại đang đăng nên không được áp dụng.* "
+                "Hãy chọn lại danh mục ở mục 🏷️ rồi đăng lại nếu cần.\n"
+            )
 
         gr.Info(f"🎉 Đã đăng thành công lên {h.site.name}!")
         updated_table = fetch_history_data(site_filter, status_filter)
@@ -516,7 +526,7 @@ def build_tab_history(db_session=None) -> dict:
 
     history_table = gr.Dataframe(
         value=fetch_history_data("Tất cả", "Tất cả"),
-        headers=["ID", "Sản phẩm", "Tiêu đề", "Website", "Loại", "Trạng thái", "Ảnh", "Giá gốc", "Ngày tạo (GMT+7)", "Link WP"],
+        headers=["ID", "Sản phẩm", "Tiêu đề", "Website", "Loại", "Trạng thái", "Ảnh", "Giá gốc", "Danh mục / Tag", "Ngày tạo (GMT+7)", "Link WP"],
         interactive=False,
         wrap=True,
     )
@@ -572,6 +582,10 @@ def build_tab_history(db_session=None) -> dict:
                     value=init_post_status,
                     info="'draft' = lưu nháp WP, 'publish' = công khai ngay",
                 )
+
+            tax = tr.build_taxonomy_widgets(
+                "**🏷️ Danh mục & Tag của bài này** *(lưu ngay khi chọn; dùng khi bấm Đăng bài lên Website)*"
+            )
 
             with gr.Row():
                 save_edits_btn = gr.Button("💾 Lưu thay đổi nội dung", variant="secondary")
@@ -670,6 +684,19 @@ def build_tab_history(db_session=None) -> dict:
         outputs=detail_outputs,
     )
 
+    # Danh mục & Tag (độc lập với 11 output chi tiết ở trên; tự lưu thẳng vào DB)
+    tax_outputs = [tax["categories"], tax["tags"], tax["status"]]
+    post_selector.change(fn=tr.history_load, inputs=[post_selector, post_type_selector], outputs=tax_outputs)
+    post_type_selector.change(fn=tr.history_load, inputs=[post_selector, post_type_selector], outputs=tax_outputs)
+    _refresh_table = dict(fn=fetch_history_data, inputs=[site_filter, status_filter], outputs=[history_table])
+    tax["categories"].input(
+        fn=tr.history_save_categories, inputs=[tax["categories"], post_selector, post_type_selector], outputs=[tax["status"]]
+    ).then(**_refresh_table)
+    tax["tags"].blur(fn=tr.history_save_tags, inputs=[tax["tags"], post_selector], outputs=[tax["status"]]).then(**_refresh_table)
+    tax["tags"].submit(fn=tr.history_save_tags, inputs=[tax["tags"], post_selector], outputs=[tax["status"]]).then(**_refresh_table)
+    tax["btn_ai"].click(fn=tr.history_ai_suggest, inputs=[post_selector, post_type_selector], outputs=tax_outputs).then(**_refresh_table)
+    tax["btn_sync"].click(fn=tr.history_sync, inputs=[post_selector, post_type_selector], outputs=tax_outputs)
+
     def _on_toggle_history_mode(mode_val, html_val):
         new_mode = not bool(mode_val)
         return (
@@ -740,4 +767,5 @@ def build_tab_history(db_session=None) -> dict:
         "html_editor": html_editor,
         "action_result_box": action_result_box,
         "post_info_box": post_info_box,
+        "taxonomy": tax,
     }

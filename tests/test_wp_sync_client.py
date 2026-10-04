@@ -40,7 +40,8 @@ def calls(monkeypatch):
 
 
 def test_publish_product_creates_with_post_and_updates_with_put(calls):
-    log = calls(post=Resp({"id": 5, "permalink": "u"}), put=Resp({"id": 9, "permalink": "u9"}))
+    log = calls(post=Resp({"id": 5, "permalink": "u"}), put=Resp({"id": 9, "permalink": "u9"}),
+                get=Resp({"id": 9, "name": "T", "status": "draft"}))
     r = wp_client.publish_product("T", "<p>x</p>", [], CFG)
     assert log[-1][0] == "POST" and log[-1][1].endswith("/wc/v3/products") and r["post_id"] == 5
     r = wp_client.publish_product("T", "<p>x</p>", [], CFG, existing_wp_id=9)
@@ -48,9 +49,25 @@ def test_publish_product_creates_with_post_and_updates_with_put(calls):
 
 
 def test_publish_post_updates_with_put(calls):
-    log = calls(put=Resp({"id": 7, "link": "l"}))
+    log = calls(put=Resp({"id": 7, "link": "l"}), get=Resp({"id": 7, "title": {"rendered": "T"}, "status": "publish"}))
     r = wp_client.publish_post("T", "<p>x</p>", [], CFG, existing_wp_id="7")
     assert log[-1][0] == "PUT" and log[-1][1].endswith("/wp/v2/posts/7") and r["post_id"] == 7
+
+
+def test_update_refuses_trashed_or_deleted_items(calls):
+    """PUT lên mục trong thùng rác làm slug hỏng (`__trashed-N`) → phải chặn trước khi PUT."""
+    log = calls(put=Resp({"id": 9}), get=Resp({"id": 9, "name": "T", "status": "trash"}))
+    with pytest.raises(ValueError, match="THÙNG RÁC"):
+        wp_client.publish_product("T", "<p>x</p>", [], CFG, existing_wp_id=9)
+    assert all(m != "PUT" for m, *_ in log)
+    log = calls(put=Resp({"id": 7}), get=Resp({"id": 7, "title": {"rendered": "T"}, "status": "trash"}))
+    with pytest.raises(ValueError, match="THÙNG RÁC"):
+        wp_client.publish_post("T", "<p>x</p>", [], CFG, existing_wp_id=7)
+    assert all(m != "PUT" for m, *_ in log)
+    log = calls(put=Resp({"id": 9}), get=Resp({}, status=404))
+    with pytest.raises(ValueError, match="không còn tồn tại"):
+        wp_client.publish_product("T", "<p>x</p>", [], CFG, existing_wp_id=9)
+    assert all(m != "PUT" for m, *_ in log)
 
 
 def test_list_items_normalizes_product_and_post(calls):

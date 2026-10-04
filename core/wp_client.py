@@ -11,7 +11,7 @@ from pathlib import Path
 
 import requests
 from requests.auth import HTTPBasicAuth
-from tenacity import retry, stop_after_attempt, wait_fixed
+from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_fixed
 
 from core.image_processor import process_single_image, DEFAULT_PROCESSED_DIR
 
@@ -195,7 +195,28 @@ def _clean_price(price_str: str) -> str:
     return cleaned.strip()
 
 
-@retry(stop=stop_after_attempt(2), wait=wait_fixed(3), reraise=True)
+def _ensure_updatable(site_config: dict, scope: str, wp_id: int | str) -> None:
+    """
+    Chặn cập nhật (PUT) một mục đã bị xoá hoặc đang nằm trong THÙNG RÁC.
+
+    PUT status=publish lên mục trong thùng rác sẽ "sống lại" mà WordPress không chạy bước khôi phục, nên
+    slug giữ nguyên dạng hỏng (vd. `__trashed-7`) và đường dẫn sản phẩm bị sai. Raise ValueError (có hướng dẫn).
+    """
+    item = get_item(site_config, scope, wp_id)
+    label = "sản phẩm" if scope == "product" else "bài viết"
+    if item is None:
+        raise ValueError(
+            f"{label.capitalize()} WordPress #{wp_id} không còn tồn tại (đã bị xoá). "
+            f"Hãy dùng nút Đăng để tạo {label} mới."
+        )
+    if item.get("status") == "trash":
+        raise ValueError(
+            f"{label.capitalize()} WordPress #{wp_id} đang nằm trong THÙNG RÁC. Hãy khôi phục nó trong wp-admin "
+            f"(Thùng rác → Khôi phục) rồi cập nhật lại, hoặc dùng nút Đăng để tạo {label} mới."
+        )
+
+
+@retry(stop=stop_after_attempt(2), wait=wait_fixed(3), reraise=True, retry=retry_if_not_exception_type(ValueError))
 def publish_product(
     title: str,
     html_content: str,
@@ -259,6 +280,7 @@ def publish_product(
             payload["images"] = images_payload
 
     if existing_wp_id:
+        _ensure_updatable(site_config, "product", existing_wp_id)
         logger.info(f"Đang CẬP NHẬT sản phẩm WooCommerce #{existing_wp_id} tại {base_url} (status={status})...")
     else:
         logger.info(f"Đang tạo sản phẩm WooCommerce tại {base_url} (status={status})...")
@@ -292,7 +314,7 @@ def publish_product(
     }
 
 
-@retry(stop=stop_after_attempt(2), wait=wait_fixed(3), reraise=True)
+@retry(stop=stop_after_attempt(2), wait=wait_fixed(3), reraise=True, retry=retry_if_not_exception_type(ValueError))
 def publish_post(
     title: str,
     html_content: str,
@@ -330,6 +352,7 @@ def publish_post(
         payload["featured_media"] = uploaded_images[0]["id"]
 
     if existing_wp_id:
+        _ensure_updatable(site_config, "post", existing_wp_id)
         logger.info(f"Đang CẬP NHẬT bài blog #{existing_wp_id} tại {base_url} (status={status})...")
     else:
         logger.info(f"Đang đăng bài blog lên {base_url} (status={status})...")

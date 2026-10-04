@@ -52,7 +52,8 @@ def build(ref: str = "HEAD", out_dir: Path | None = None) -> Path:
             data = src.read(info)
             if info.filename.endswith(".bat"):
                 data = data.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
-            dst.writestr(info, data)   # giữ nguyên quyền thực thi (.sh)
+            info.external_attr = (0o755 if info.filename.endswith(".sh") else 0o644) << 16   # .sh chạy được, còn lại đọc/ghi
+            dst.writestr(info, data)
             kept.append(info.filename[len(prefix):])
 
     missing = [r for r in REQUIRED if r not in kept]

@@ -29,7 +29,7 @@ _STATUS_LABELS = {
     "trashed": "🗑️ Thùng rác WP",
     "missing": "❓ Không còn trên WP",
 }
-_TABLE_COLUMNS = ["ID", "Sản phẩm", "Tiêu đề", "Website", "Loại", "Trạng thái", "Ảnh", "Giá gốc",
+_TABLE_COLUMNS = ["ID", "Sản phẩm", "Tiêu đề", "Website", "Loại", "Trạng thái", "Ảnh", "Giá gốc", "Giá KM",
                   "Danh mục / Tag", "Ngày tạo (GMT+7)", "Link WP"]
 _NO_DETAIL = ("", "", "", "", "Sản phẩm WooCommerce", "draft", "", "", "*(Chưa chọn bài viết)*", None, None)
 
@@ -59,6 +59,7 @@ def fetch_history_data(site_filter: str = ALL, status_filter: str = ALL) -> pd.D
         "Trạng thái": _STATUS_LABELS.get(r.status, r.status),
         "Ảnh": f"{r.image_count} ảnh" if r.image_count > 0 else "-",
         "Giá gốc": r.regular_price or "-",
+        "Giá KM": r.sale_price or "-",
         "Danh mục / Tag": r.taxonomy_summary,
         "Ngày tạo (GMT+7)": fmt_vn(r.created_at, "%Y-%m-%d %H:%M", ""),
         "Link WP": r.wp_post_url,
@@ -356,7 +357,7 @@ def build_tab_history(db_session=None) -> dict:
 
     history_table = gr.Dataframe(
         value=fetch_history_data("Tất cả", "Tất cả"),
-        headers=["ID", "Sản phẩm", "Tiêu đề", "Website", "Loại", "Trạng thái", "Ảnh", "Giá gốc", "Danh mục / Tag", "Ngày tạo (GMT+7)", "Link WP"],
+        headers=["ID", "Sản phẩm", "Tiêu đề", "Website", "Loại", "Trạng thái", "Ảnh", "Giá gốc", "Giá KM", "Danh mục / Tag", "Ngày tạo (GMT+7)", "Link WP"],
         interactive=False,
         wrap=True,
     )

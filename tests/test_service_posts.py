@@ -188,3 +188,22 @@ def test_ui_publish_failure_message(world, monkeypatch):
     monkeypatch.setattr(wp_client, "publish_product", lambda **kw: (_ for _ in ()).throw(RuntimeError("401")))
     r = ui.on_publish_history_post(_choice(h1), "t", "", "", "", "h", "product", "draft")
     assert r[0] == "❌ Đăng thất bại: 401" and len(r) == 6
+
+
+def test_history_table_shows_sale_price(mem_db):
+    from db.models import PostHistory, Site
+    from ui import tab_history
+
+    s = mem_db()
+    site = Site(name="shop", url="https://shop.example.com")
+    s.add(site)
+    s.commit()
+    s.add_all([
+        PostHistory(site_id=site.id, product_name="A", title="A", raw_html="", status="saved", regular_price="100", sale_price="80"),
+        PostHistory(site_id=site.id, product_name="B", title="B", raw_html="", status="saved", regular_price="50", sale_price=""),
+    ])
+    s.commit()
+    s.close()
+    df = tab_history.fetch_history_data()
+    assert list(df.columns)[7:9] == ["Giá gốc", "Giá KM"]
+    assert dict(zip(df["Sản phẩm"], df["Giá KM"])) == {"A": "80", "B": "-"}

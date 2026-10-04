@@ -35,6 +35,7 @@ class PostRow:
     status: str
     image_count: int
     regular_price: str
+    sale_price: str
     category_ids: list[int]
     tags: list[str]
     taxonomy_summary: str        # '📂 A, B · 🏷️ t1' hoặc '-'
@@ -138,6 +139,7 @@ def list_posts(
                 status=d.status,
                 image_count=len(d.image_paths),
                 regular_price=d.regular_price,
+                sale_price=d.sale_price,
                 category_ids=d.category_ids,
                 tags=d.tags,
                 taxonomy_summary=taxonomy_svc.summarize_selection(

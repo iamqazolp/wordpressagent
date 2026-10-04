@@ -123,3 +123,26 @@ def test_upload_header_is_latin1_safe(tmp_path, monkeypatch):
     )
     assert len(res) == 1
     assert "bom-dau.jpg" in seen["Content-Disposition"]
+
+
+@pytest.mark.parametrize("apply,expected", [(True, "/logo.png"), (False, None)])
+def test_upload_images_watermark_toggle(tmp_path, monkeypatch, apply, expected):
+    from core import wp_client
+    img = tmp_path / "a.jpg"
+    img.write_bytes(b"x")
+    seen = {}
+
+    def fake_process(input_path, output_dir, options):
+        seen.update(options)
+        return {"success": False}
+
+    class R:
+        status_code = 201
+        def json(self):
+            return {"id": 1, "source_url": "https://x/a.jpg"}
+
+    monkeypatch.setattr(wp_client, "process_single_image", fake_process)
+    monkeypatch.setattr(wp_client.requests, "post", lambda *a, **k: R())
+    cfg = {"url": "https://x", "wp_user": "u", "wp_app_password": "p", "watermark_path": "/logo.png"}
+    wp_client.upload_images([str(img)], cfg, optimize=True, apply_watermark=apply)
+    assert seen["watermark_path"] == expected

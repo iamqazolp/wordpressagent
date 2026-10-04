@@ -224,3 +224,16 @@ def test_save_post_edits_images_none_keeps_empty_clears(world, tmp_path, monkeyp
     assert len(d.image_paths) == 1                              # None = giữ nguyên
     d = svc.save_post_edits(h1, "t", "", "", "", "<p>x</p>", [])
     assert d.image_paths == []                                   # [] = xoá hết
+
+
+def test_publish_saved_post_passes_image_options(world, monkeypatch):
+    (h1, _), _, _ = world
+    seen = {}
+    real = pipeline.publish_one
+    monkeypatch.setattr(pipeline, "publish_one", lambda *a, **kw: seen.update(kw) or real(*a, **kw))
+    svc.publish_saved_post(h1, "t", "", "", "", "<p>x</p>", "product", "draft",
+                           optimize_images=True, apply_watermark=False, remove_bg=True)
+    assert seen["apply_watermark"] is False and seen["remove_bg"] is True and seen["optimize_images"] is True
+    seen.clear()
+    svc.publish_saved_post(h1, "t", "", "", "", "<p>x</p>", "product", "draft")
+    assert seen["apply_watermark"] is True and seen["remove_bg"] is False

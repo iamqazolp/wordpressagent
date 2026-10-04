@@ -63,6 +63,7 @@ def publish_and_record(
     optimize_images: bool = True,
     remove_bg: bool = False,
     progress: Progress | None = None,
+    apply_watermark: bool = True,
 ) -> list[dict]:
     """
     Đăng lần lượt lên từng website rồi ghi lịch sử (thành công → 'published', lỗi → 'failed').
@@ -81,6 +82,7 @@ def publish_and_record(
         progress_callback=progress,
         optimize_images=optimize_images,
         remove_bg=remove_bg,
+        apply_watermark=apply_watermark,
     )
     with session_scope() as db:
         for result in results:
@@ -101,20 +103,20 @@ def save_drafts(
     post_type: str,
     regular_price: str = "",
     sale_price: str = "",
-    optimize_images: bool = True,
-    remove_bg: bool = False,
 ) -> SaveDraftsResult:
-    """Lưu bài vào Kho bài viết (status 'saved'), tối ưu ảnh + watermark theo từng website. Chưa đẩy lên WordPress."""
-    image_paths = image_paths or []
+    """
+    Lưu bài vào Kho bài viết (status 'saved'). Chưa đẩy lên WordPress.
+
+    Lưu ẢNH GỐC: nén WebP / watermark / tách nền chỉ áp dụng lúc đăng (theo logo hiện tại của website và
+    tuỳ chọn người dùng chọn khi đăng), nên có thể đổi hoặc bỏ watermark sau khi đã lưu bài.
+    """
+    image_paths = image_service.persist_images(image_paths or [])
     saved = 0
     with session_scope() as db:
         for site_name, art in articles.items():
             site = crud.get_site_by_name(db, site_name)
             if not site:
                 continue
-            site_images = image_paths
-            if optimize_images and image_paths:
-                site_images = image_service.optimize_for_site(image_paths, site_name, remove_bg=remove_bg)
-            _record(db, site, art, post_type, "saved", regular_price, sale_price, site_images, "Sản phẩm")
+            _record(db, site, art, post_type, "saved", regular_price, sale_price, image_paths, "Sản phẩm")
             saved += 1
     return SaveDraftsResult(saved_count=saved, image_count=len(image_paths))

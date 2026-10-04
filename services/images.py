@@ -29,31 +29,6 @@ def _watermark_options(site_cfg: dict | None) -> dict:
     }
 
 
-def optimize_for_site(image_paths: list[str], site_name: str, remove_bg: bool = False) -> list[str]:
-    """
-    Tối ưu (WebP ≤1200px, q85) và đóng watermark của website cho bộ ảnh; trả đường dẫn ảnh đã xử lý.
-    Lỗi xử lý → trả lại ảnh gốc (không chặn việc lưu bài).
-    """
-    if not image_paths:
-        return []
-    try:
-        results = process_image_batch(
-            image_paths,
-            options={
-                "max_width": 1200,
-                "max_height": 1200,
-                "format": "WEBP",
-                "quality": 85,
-                "remove_bg": remove_bg,
-                **_watermark_options(site_service.get_site_config(site_name)),
-            },
-        )
-        return [r["output_path"] for r in results if r.get("output_path")] or list(image_paths)
-    except Exception as e:
-        logger.warning(f"Lỗi tối ưu ảnh cho {site_name}: {e}")
-        return list(image_paths)
-
-
 def preview_processed(
     image_paths: list[str],
     site_name: str | None,

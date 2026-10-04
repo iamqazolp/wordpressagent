@@ -241,8 +241,9 @@ def create_app() -> gr.Blocks:
             history_comps['images_upload'],
         ]
 
-        def _on_publish_and_sync(art_state, imgs, p_status, p_type, r_price, s_price, opt_img, rem_bg, s_filter, st_filter):
-            msg = publish_to_sites_ui(art_state, imgs, p_status, p_type, r_price, s_price, optimize_images=opt_img, remove_bg=rem_bg)
+        def _on_publish_and_sync(art_state, imgs, p_status, p_type, r_price, s_price, opt_img, rem_bg, s_filter, st_filter, wm_chk=True):
+            msg = publish_to_sites_ui(art_state, imgs, p_status, p_type, r_price, s_price, optimize_images=opt_img,
+                                      remove_bg=rem_bg, apply_watermark=wm_chk)
             df = fetch_history_data(s_filter, st_filter)
             choices = get_history_post_choices(s_filter, st_filter)
             new_val = choices[0] if choices else None
@@ -267,6 +268,7 @@ def create_app() -> gr.Blocks:
                 create_comps['img_remove_bg_chk'],
                 history_comps['site_filter'],
                 history_comps['status_filter'],
+                create_comps['img_watermark_chk'],
             ],
             outputs=[
                 create_comps['publish_result'],
@@ -280,8 +282,8 @@ def create_app() -> gr.Blocks:
             outputs=history_detail_outputs,
         )
 
-        def _on_save_draft_and_sync(art_state, imgs, p_type, r_price, s_price, opt_img, rem_bg, s_filter, st_filter):
-            msg = save_draft_articles_ui(art_state, imgs, p_type, r_price, s_price, optimize_images=opt_img, remove_bg=rem_bg)
+        def _on_save_draft_and_sync(art_state, imgs, p_type, r_price, s_price, s_filter, st_filter):
+            msg = save_draft_articles_ui(art_state, imgs, p_type, r_price, s_price)
             df = fetch_history_data(s_filter, st_filter)
             choices = get_history_post_choices(s_filter, st_filter)
             new_val = choices[0] if choices else None
@@ -295,8 +297,6 @@ def create_app() -> gr.Blocks:
                 create_comps['post_type_selector'],
                 create_comps['regular_price_input'],
                 create_comps['sale_price_input'],
-                create_comps['img_optimize_chk'],
-                create_comps['img_remove_bg_chk'],
                 history_comps['site_filter'],
                 history_comps['status_filter'],
             ],

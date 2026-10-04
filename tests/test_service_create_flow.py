@@ -118,27 +118,18 @@ def test_publish_and_record_failure_recorded(world, monkeypatch):
     assert posts.get_post(rows[0].id).error_message == "down"
 
 
-def test_save_drafts_optimizes_per_site(world, monkeypatch):
+def test_save_drafts_keeps_original_images_per_site(world, monkeypatch, tmp_path):
     from services import posts
-    calls = []
-    monkeypatch.setattr(images, "optimize_for_site", lambda paths, site, remove_bg=False: calls.append(site) or [f"{site}.webp"])
+    monkeypatch.setattr(images, "DATA_DIR", tmp_path / "data")
+    monkeypatch.setattr(images, "POST_IMAGES_DIR", tmp_path / "data" / "post_images")
+    called = []
+    monkeypatch.setattr(images, "process_image_batch", lambda *a, **k: called.append(1) or [])
     res = publishing.save_drafts(_articles(), ["/a.jpg"], "Bài viết Blog", "1", "2")
-    assert (res.saved_count, res.image_count) == (2, 1) and sorted(calls) == ["blog", "shop"]
+    assert (res.saved_count, res.image_count) == (2, 1) and called == []   # không xử lý/đóng watermark lúc lưu
     rows = posts.list_posts()
     assert {r.status for r in rows} == {"saved"} and {r.post_type for r in rows} == {"post"}
-    assert sorted(posts.get_post(r.id).image_paths[0] for r in rows) == ["blog.webp", "shop.webp"]
-
-    calls.clear()
-    publishing.save_drafts({"ghost": _articles()["shop"]}, ["/a.jpg"], "product")   # site không tồn tại → bỏ qua
-    assert calls == []
-    publishing.save_drafts(_articles(), ["/a.jpg"], "product", optimize_images=False)
-    assert calls == []
-
-
-def test_optimize_for_site_falls_back_to_originals(world, monkeypatch):
-    monkeypatch.setattr(images, "process_image_batch", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("pil")))
-    assert images.optimize_for_site(["/a.jpg"], "shop") == ["/a.jpg"]
-    assert images.optimize_for_site([], "shop") == []
+    assert [posts.get_post(r.id).image_paths for r in rows] == [["/a.jpg"], ["/a.jpg"]]
+    assert publishing.save_drafts({"ghost": _articles()["shop"]}, ["/a.jpg"], "product").saved_count == 0
 
 
 def test_preview_processed_options(world, monkeypatch):
@@ -156,7 +147,7 @@ def test_ui_publish_report_and_save_messages(world, fake_wp):
     msg = tab_create.publish_to_sites_ui(_articles(), None, "draft", "product")
     assert msg.startswith("### 📋 Kết Quả Đăng Bài:") and "**shop**: ✅ Thành công (📝 Nháp)" in msg
     assert tab_create.save_draft_articles_ui({}, None, "product").startswith("❌ Chưa có nội dung")
-    msg = tab_create.save_draft_articles_ui(_articles(), None, "product", optimize_images=False)
+    msg = tab_create.save_draft_articles_ui(_articles(), None, "product")
     assert msg.startswith("### 💾 Đã lưu thành công 2 bài viết")
 
 

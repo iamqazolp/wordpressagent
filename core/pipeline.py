@@ -107,6 +107,7 @@ def publish_one(
     optimize_images: bool = True,
     remove_bg: bool = False,
     existing_wp_id: int | str | None = None,
+    apply_watermark: bool = True,
 ) -> dict:
     """
     Đăng MỘT bài lên MỘT website: tải ảnh -> tra category/tag -> tạo sản phẩm/bài viết.
@@ -130,6 +131,7 @@ def publish_one(
                     site_config,
                     optimize=optimize_images,
                     remove_bg=remove_bg,
+                    apply_watermark=apply_watermark,
                 )
                 if not uploaded:
                     image_warning = (
@@ -215,6 +217,7 @@ def publish_articles(
     progress_callback: Callable[[float, str], None] | None = None,
     optimize_images: bool = True,
     remove_bg: bool = False,
+    apply_watermark: bool = True,
 ) -> list[dict]:
     """
     Publish articles to WordPress sites.
@@ -238,6 +241,7 @@ def publish_articles(
             sale_price=sale_price,
             optimize_images=optimize_images,
             remove_bg=remove_bg,
+            apply_watermark=apply_watermark,
         ))
 
     return results

@@ -81,6 +81,7 @@ def publish_to_sites_ui(
     optimize_images: bool = True,
     remove_bg: bool = False,
     progress=gr.Progress(),
+    apply_watermark: bool = True,
 ):
     """
     Wrapper that calls services.publishing.publish_and_record(): đăng lên các website và ghi PostHistory.
@@ -97,6 +98,7 @@ def publish_to_sites_ui(
         sale_price=sale_price,
         optimize_images=optimize_images,
         remove_bg=remove_bg,
+        apply_watermark=apply_watermark,
         progress=lambda val, desc: progress(val, desc=desc),
     )
 
@@ -124,12 +126,10 @@ def save_draft_articles_ui(
     post_type,
     regular_price="",
     sale_price="",
-    optimize_images: bool = True,
-    remove_bg: bool = False,
 ):
     """
     Lưu toàn bộ bài viết đã tạo vào hệ thống (bảng PostHistory) với trạng thái 'saved'.
-    Tự động tối ưu WebP và gắn watermark theo từng website nếu được chọn.
+    Ảnh được lưu nguyên bản; nén WebP/watermark chọn lúc đăng ở tab Kho bài viết.
     """
     if not articles_state:
         return "❌ Chưa có nội dung bài viết nào để lưu! Hãy bấm '🚀 Tạo bài viết' trước."
@@ -141,8 +141,6 @@ def save_draft_articles_ui(
             post_type,
             regular_price,
             sale_price,
-            optimize_images=optimize_images,
-            remove_bg=remove_bg,
         )
     except Exception as e:
         logger.exception("Lỗi khi lưu bài viết vào hệ thống")
@@ -152,7 +150,8 @@ def save_draft_articles_ui(
     return (
         f"### 💾 Đã lưu thành công {res.saved_count} bài viết vào hệ thống!\n\n"
         f"- **Trạng thái:** `Đã lưu nháp trên Web` (chưa đẩy lên WordPress/WooCommerce).\n"
-        f"- **Hình ảnh:** Đã nạp danh sách {res.image_count} ảnh kèm tối ưu.\n"
+        f"- **Hình ảnh:** Đã lưu {res.image_count} ảnh gốc "
+        f"(nén WebP / watermark sẽ áp dụng lúc đăng, có thể bật/tắt ở tab Kho bài viết).\n"
         f"- **Bước tiếp theo:** Bạn có thể qua tab **📚 Kho Bài Viết & Lịch Sử** để xem lại danh sách, "
         f"chỉnh sửa bài viết hoặc bấm nút đăng lên website bất cứ khi nào bạn muốn."
     )

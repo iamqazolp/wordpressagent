@@ -200,11 +200,15 @@ def on_publish_history_post(
     site_filter: str = ALL,
     status_filter: str = ALL,
     gallery_images=_UNSET,
+    optimize_images: bool = True,
+    apply_watermark: bool = True,
+    remove_bg: bool = False,
 ) -> tuple:
     """Đăng ngay bài viết đã lưu kèm hình ảnh lên WordPress/WooCommerce và cập nhật trạng thái."""
     return _publish_history(
         False, choice_str, title, short_desc, reg_price, sale_price, raw_html, post_type, post_status,
         new_images_input, site_filter, status_filter, gallery_images,
+        optimize_images, apply_watermark, remove_bg,
     )
 
 
@@ -221,11 +225,15 @@ def on_update_history_post(
     site_filter: str = ALL,
     status_filter: str = ALL,
     gallery_images=_UNSET,
+    optimize_images: bool = True,
+    apply_watermark: bool = True,
+    remove_bg: bool = False,
 ) -> tuple:
     """Cập nhật (ghi đè) bài WordPress đã đăng/đã liên kết của bài này thay vì đăng thêm bản mới."""
     return _publish_history(
         True, choice_str, title, short_desc, reg_price, sale_price, raw_html, post_type, post_status,
         new_images_input, site_filter, status_filter, gallery_images,
+        optimize_images, apply_watermark, remove_bg,
     )
 
 
@@ -243,6 +251,9 @@ def _publish_history(
     site_filter: str = ALL,
     status_filter: str = ALL,
     gallery_images=_UNSET,
+    optimize_images: bool = True,
+    apply_watermark: bool = True,
+    remove_bg: bool = False,
 ) -> tuple:
     verb = "cập nhật" if update_existing else "đăng"
     post_id = extract_id_from_choice(choice_str)
@@ -254,6 +265,7 @@ def _publish_history(
             post_id, title, short_desc, reg_price, sale_price, raw_html, post_type, post_status,
             _final_images(gallery_images, new_images_input),
             update_existing=update_existing,
+            optimize_images=optimize_images, apply_watermark=apply_watermark, remove_bg=remove_bg,
         )
     except PublishError as e:
         logger.error(f"Đăng bài đã lưu #{post_id} thất bại: {e.message}")
@@ -422,6 +434,18 @@ def build_tab_history(db_session=None) -> dict:
                 file_types=["image"],
                 interactive=True,
             )
+            with gr.Accordion("🏷️ Xử lý ảnh khi đăng (nén WebP / Watermark)", open=True):
+                opt_img_chk = gr.Checkbox(
+                    label="⚡ Chuẩn hóa & nén WebP (max 1200px)", value=True,
+                )
+                watermark_chk = gr.Checkbox(
+                    label="🏷️ Đóng watermark logo của website",
+                    value=True,
+                    info="Bỏ chọn để đăng ảnh KHÔNG có watermark. Đổi logo/vị trí ở tab Quản Lý Website, áp dụng cho lần đăng sau.",
+                )
+                remove_bg_chk = gr.Checkbox(
+                    label="✨ Tách nền sản phẩm (rembg)", value=False,
+                )
 
             with gr.Row():
                 post_type_selector = gr.Radio(
@@ -588,6 +612,9 @@ def build_tab_history(db_session=None) -> dict:
             site_filter,
             status_filter,
             images_gallery,
+            opt_img_chk,
+            watermark_chk,
+            remove_bg_chk,
         ],
         outputs=[action_result_box, history_table, post_selector, images_gallery, post_info_box, images_upload],
         show_progress=True,
@@ -608,6 +635,9 @@ def build_tab_history(db_session=None) -> dict:
             site_filter,
             status_filter,
             images_gallery,
+            opt_img_chk,
+            watermark_chk,
+            remove_bg_chk,
         ],
         outputs=[action_result_box, history_table, post_selector, images_gallery, post_info_box, images_upload],
         show_progress=True,

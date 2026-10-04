@@ -203,12 +203,17 @@ def publish_saved_post(
     post_status: str,
     new_image_paths: list[str] | None = None,
     update_existing: bool = False,
+    optimize_images: bool = True,
+    apply_watermark: bool = True,
+    remove_bg: bool = False,
 ) -> PublishOutcome:
     """
     Đăng ngay một bài đã lưu. Danh mục/tag lấy từ bài đã lưu; id danh mục chỉ áp dụng khi cùng loại nội dung
     với lúc chọn (xem category_warning). Chỉ ghi DB khi đăng thành công.
     update_existing=True: GHI ĐÈ bài WP đã liên kết (wp_post_id) bằng PUT thay vì đăng thêm bản mới
     (raise ServiceError nếu bài chưa có wp_post_id). Ảnh được tải lên lại như khi đăng mới.
+    optimize_images / apply_watermark / remove_bg: xử lý ảnh GỐC lúc đăng (nén WebP, đóng logo watermark hiện tại
+    của website, tách nền). Bỏ apply_watermark để đăng ảnh không có watermark.
     Raise ServiceError (không tìm thấy/thiếu cấu hình) hoặc PublishError (WordPress từ chối/lỗi mạng).
     """
     with session_scope() as db:
@@ -243,6 +248,7 @@ def publish_saved_post(
             h.site.name, site_config, article, valid_images, post_type, post_status,
             regular_price=regular_price.strip(), sale_price=sale_price.strip(),
             existing_wp_id=existing_id,
+            optimize_images=optimize_images, apply_watermark=apply_watermark, remove_bg=remove_bg,
         )
         if not res.get("success"):
             raise PublishError(res.get("error") or "Lỗi không xác định")

@@ -36,6 +36,7 @@ def upload_images(
     site_config: dict,
     optimize: bool = True,
     remove_bg: bool = False,
+    apply_watermark: bool = True,
 ) -> list[dict]:
     """
     Upload nhiều ảnh lên WordPress Media Library (Tự động tối ưu WebP & Watermark ở Phase 3).
@@ -44,6 +45,7 @@ def upload_images(
         image_paths:  Danh sách đường dẫn file ảnh trên máy.
         site_config:  {"url": str, "client_key": str, "client_secret": str, "watermark_path": ...}
         optimize:     Có nén WebP và đóng watermark hay không.
+        apply_watermark: Có đóng logo watermark của website hay không (chỉ có tác dụng khi optimize=True).
         remove_bg:    Có chạy thuật toán tách nền rembg hay không.
 
     Returns:
@@ -84,7 +86,7 @@ def upload_images(
                         "format": "WEBP",
                         "quality": 85,
                         "remove_bg": remove_bg,
-                        "watermark_path": site_config.get("watermark_path") or None,
+                        "watermark_path": (site_config.get("watermark_path") or None) if apply_watermark else None,
                         "watermark_position": site_config.get("watermark_position", "bottom-right"),
                         "watermark_opacity": float(site_config.get("watermark_opacity", 0.7) or 0.7),
                     },

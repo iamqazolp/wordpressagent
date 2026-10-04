@@ -149,7 +149,7 @@ def generate_and_save(
 
 def _save_as_drafts(articles: dict[str, dict], regular_price: str, sale_price: str) -> None:
     # Hàng loạt luôn lưu theo loại 'product' (hành vi cũ của tab này)
-    publishing.save_drafts(articles, [], "product", regular_price, sale_price, optimize_images=False)
+    publishing.save_drafts(articles, [], "product", regular_price, sale_price)
 
 
 def generate_and_publish(

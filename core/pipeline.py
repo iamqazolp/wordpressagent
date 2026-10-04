@@ -132,7 +132,15 @@ def publish_one(
                     remove_bg=remove_bg,
                 )
                 if not uploaded:
-                    image_warning = "Tải ảnh thất bại (vui lòng kiểm tra lại quyền WordPress Application Password)."
+                    image_warning = (
+                        "Tải ảnh thất bại (xem log để biết chi tiết, có thể do tên file, "
+                        "dung lượng hoặc quyền WordPress Application Password)."
+                    )
+                elif len(uploaded) < len(image_paths):
+                    image_warning = (
+                        f"Chỉ tải được {len(uploaded)}/{len(image_paths)} ảnh lên WordPress "
+                        "(xem log để biết chi tiết)."
+                    )
             except Exception as e:
                 logger.warning(f'Upload ảnh thất bại tại {site_name}: {e}')
                 image_warning = f"Lỗi upload ảnh: {e}"

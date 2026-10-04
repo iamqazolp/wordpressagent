@@ -90,3 +90,36 @@ def test_trash_item_never_forces(calls):
         assert method == "DELETE" and url.endswith("/8") and kw["params"] == {"force": "false"}
         assert item["status"] == "trash"
     assert "force" not in inspect.signature(wp_client.trash_item).parameters
+
+
+def test_ascii_filename_vietnamese():
+    from core.wp_client import ascii_filename
+    out = ascii_filename("Bơm dầu thuỷ lực Cp-180 (1)_optimized.webp")
+    assert out == "bom-dau-thuy-luc-cp-180-1-optimized.webp"
+    out.encode("latin-1")
+    assert ascii_filename("ĐÈN.JPG") == "den.jpg"
+    assert ascii_filename("???.png") == "image.png"
+
+
+def test_upload_header_is_latin1_safe(tmp_path, monkeypatch):
+    from core import wp_client
+    img = tmp_path / "Bơm dầu.jpg"
+    img.write_bytes(b"x")
+    seen = {}
+
+    class R:
+        status_code = 201
+        def json(self):
+            return {"id": 1, "source_url": "https://x/a.jpg"}
+
+    def fake_post(url, **kw):
+        kw["headers"]["Content-Disposition"].encode("latin-1")
+        seen.update(kw["headers"])
+        return R()
+
+    monkeypatch.setattr(wp_client.requests, "post", fake_post)
+    res = wp_client.upload_images(
+        [str(img)], {"url": "https://x", "wp_user": "u", "wp_app_password": "p"}, optimize=False
+    )
+    assert len(res) == 1
+    assert "bom-dau.jpg" in seen["Content-Disposition"]

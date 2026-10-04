@@ -5,8 +5,8 @@ core/wp_client.py
 from __future__ import annotations
 import logging
 import mimetypes
-import os
 import re
+import unicodedata
 from pathlib import Path
 
 import requests
@@ -16,6 +16,19 @@ from tenacity import retry, stop_after_attempt, wait_fixed
 from core.image_processor import process_single_image, DEFAULT_PROCESSED_DIR
 
 logger = logging.getLogger(__name__)
+
+
+def ascii_filename(name: str) -> str:
+    """
+    Chuyển tên file về ASCII an toàn cho header HTTP (Content-Disposition chỉ nhận latin-1).
+    'Bơm dầu thuỷ lực (1)_optimized.webp' -> 'bom-dau-thuy-luc-1-optimized.webp'
+    """
+    p = Path(name)
+    stem = unicodedata.normalize("NFD", p.stem.replace("đ", "d").replace("Đ", "D"))
+    stem = "".join(c for c in stem if unicodedata.category(c) != "Mn")
+    stem = re.sub(r"[^A-Za-z0-9]+", "-", stem).strip("-").lower() or "image"
+    ext = re.sub(r"[^A-Za-z0-9.]", "", p.suffix).lower() or ".jpg"
+    return f"{stem}{ext}"
 
 
 def upload_images(
@@ -99,7 +112,7 @@ def upload_images(
                     endpoint,
                     auth=auth,
                     headers={
-                        "Content-Disposition": f'attachment; filename="{upload_path.name}"',
+                        "Content-Disposition": f'attachment; filename="{ascii_filename(upload_path.name)}"',
                         "Content-Type": mime_type,
                     },
                     data=f,

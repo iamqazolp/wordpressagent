@@ -237,3 +237,15 @@ def test_publish_saved_post_passes_image_options(world, monkeypatch):
     seen.clear()
     svc.publish_saved_post(h1, "t", "", "", "", "<p>x</p>", "product", "draft")
     assert seen["apply_watermark"] is True and seen["remove_bg"] is False
+
+
+def test_history_select_warns_about_processed_images(world, tmp_path, monkeypatch):
+    from services import images as images_svc
+    monkeypatch.setattr(images_svc, "DATA_DIR", tmp_path / "data")
+    monkeypatch.setattr(images_svc, "POST_IMAGES_DIR", tmp_path / "data" / "post_images")
+    (h1, _), _, _ = world
+    baked = tmp_path / "x_optimized.webp"
+    baked.write_bytes(b"x")
+    svc.save_post_edits(h1, "t", "", "", "", "<p>x</p>", [str(baked)])
+    info = ui.on_select_history_post(f"#{h1} - t")[8]
+    assert "_optimized" in info and "watermark" in info

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 import gradio as gr
 import pandas as pd
 
@@ -125,6 +126,11 @@ def on_select_history_post(choice_str: str) -> tuple:
     extra = [f"- **Lỗi trước đó:** `{d.error_message}`"] if d.error_message else []
     # (thứ tự dòng cũ: link WordPress rồi mới tới lỗi trước đó)
     info_md = _info_md(d, "Ngày lưu", fmt_vn(d.created_at, "%Y-%m-%d %H:%M", ""), len(existing))
+    if any("_optimized" in Path(p).stem for p in existing):
+        info_md += (
+            "\n- ⚠️ **Ảnh của bài này là ảnh đã xử lý (tên có `_optimized`), có thể đã dính watermark từ trước** — "
+            "bỏ tick watermark cũng không gỡ được. Hãy xoá các ảnh đó khỏi album, thêm lại ảnh gốc rồi mới đăng."
+        )
     if extra:
         info_md += "\n" + "\n".join(extra)
 

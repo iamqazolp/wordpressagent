@@ -57,6 +57,25 @@ def test_similarity_ignores_accents_case_and_containment():
     assert sync.similarity("", "x") == 0.0
 
 
+def test_remote_modified_time_is_converted_from_utc_to_gmt7(env, monkeypatch):
+    it = item(1, "A")
+    it.update(modified="2026-10-04T09:30:00", modified_gmt="2026-10-04T09:30:00")      # site đặt múi giờ UTC
+    it2 = item(2, "B")
+    it2.update(modified="2026-10-04T16:30:00", modified_gmt="2026-10-04T09:30:00")     # site đặt GMT+7: vẫn cùng một thời điểm
+    it3 = item(3, "C")
+    it3.update(modified="", modified_gmt="")
+    monkeypatch.setattr(wp_client, "list_items", lambda *a, **k: ([it, it2, it3], 3))
+    page = sync.list_remote("shop", "product")
+    assert [i.modified for i in page.items] == ["04/10/2026 16:30", "04/10/2026 16:30", "-"]
+
+
+def test_utc_iso_to_vn():
+    from core.timeutil import utc_iso_to_vn
+    assert utc_iso_to_vn("2026-10-04T17:30:00") == "05/10/2026 00:30"          # qua nửa đêm
+    assert utc_iso_to_vn("2026-10-04T09:30:00Z") == "04/10/2026 16:30"
+    assert utc_iso_to_vn("") == "-" and utc_iso_to_vn("rác") == "-" and utc_iso_to_vn(None, empty="") == ""
+
+
 def test_local_status_mapping():
     assert [sync.local_status_for(x) for x in ("publish", "draft", "pending", "trash", None, "weird")] == \
         ["published", "draft", "draft", "trashed", "missing", "draft"]

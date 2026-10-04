@@ -572,17 +572,20 @@ def _normalize_item(raw: dict, scope: str) -> dict:
         title = raw.get("name", "")
         url = raw.get("permalink", "")
         modified = raw.get("date_modified", "")
+        modified_gmt = raw.get("date_modified_gmt", "")
     else:
         t = raw.get("title")
         title = t.get("rendered", "") if isinstance(t, dict) else (t or "")
         url = raw.get("link", "")
         modified = raw.get("modified", "")
+        modified_gmt = raw.get("modified_gmt", "")
     return {
         "id": raw.get("id"),
         "title": _html_unescape(title),
         "status": raw.get("status", ""),
         "url": url,
-        "modified": modified or "",
+        "modified": modified or "",              # giờ theo múi giờ của website (có thể là UTC)
+        "modified_gmt": modified_gmt or "",      # luôn là UTC — dùng cái này để đổi sang GMT+7
         "type": "product" if _is_product_scope(scope) else "post",
     }
 

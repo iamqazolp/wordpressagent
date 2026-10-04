@@ -17,6 +17,7 @@ import unicodedata
 from dataclasses import dataclass
 
 from core import wp_client
+from core.timeutil import utc_iso_to_vn
 from db import crud
 from db.database import session_scope
 from db.models import PostHistory
@@ -45,7 +46,7 @@ class RemoteItem:
     title: str
     status: str                  # trạng thái gốc của WordPress (publish/draft/trash...)
     url: str
-    modified: str
+    modified: str                # giờ GMT+7 đã định dạng ('-' nếu không có)
     type: str                    # 'product' | 'post'
     local_post_id: int | None    # id trong kho bài nếu bài này do app đăng/đã liên kết
 
@@ -109,6 +110,11 @@ def similarity(a: str, b: str) -> float:
     return ratio
 
 
+def _modified_vn(item: dict) -> str:
+    """Giờ sửa cuối theo GMT+7. Ưu tiên trường UTC (*_gmt) vì giờ 'local' của WP phụ thuộc cài đặt múi giờ của site."""
+    return utc_iso_to_vn(item.get("modified_gmt")) if item.get("modified_gmt") else (item.get("modified") or "-")
+
+
 def edit_url(site_url: str, wp_id: int | str) -> str:
     return f"{site_url.rstrip('/')}/wp-admin/post.php?post={wp_id}&action=edit"
 
@@ -161,7 +167,13 @@ def list_remote(site_name: str, post_type: str, status: str = "any", search: str
             raise ServiceError(f"Không đọc được danh sách từ {site_name}: {e}")
         local = _local_ids_by_wp_id(db, site.id, [i["id"] for i in items])
         return RemotePage(
-            items=[RemoteItem(local_post_id=local.get(str(i["id"])), **i) for i in items],
+            items=[
+                RemoteItem(
+                    id=i["id"], title=i["title"], status=i["status"], url=i["url"], type=i["type"],
+                    modified=_modified_vn(i), local_post_id=local.get(str(i["id"])),
+                )
+                for i in items
+            ],
             total=total, page=page, per_page=per_page,
         )
 

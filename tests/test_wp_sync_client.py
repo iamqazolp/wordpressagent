@@ -54,11 +54,12 @@ def test_publish_post_updates_with_put(calls):
 
 
 def test_list_items_normalizes_product_and_post(calls):
-    log = calls(get=Resp([{"id": 1, "name": "Quạt &amp; Máy", "status": "draft", "permalink": "p", "date_modified": "2026-01-01"}],
+    log = calls(get=Resp([{"id": 1, "name": "Quạt &amp; Máy", "status": "draft", "permalink": "p", "date_modified": "2026-01-01T09:00:00", "date_modified_gmt": "2026-01-01T02:00:00"}],
                          headers={"X-WP-Total": "41"}))
     items, total = wp_client.list_items(CFG, "product", search="quạt")
     assert total == 41 and items[0] == {"id": 1, "title": "Quạt & Máy", "status": "draft", "url": "p",
-                                        "modified": "2026-01-01", "type": "product"}
+                                        "modified": "2026-01-01T09:00:00", "modified_gmt": "2026-01-01T02:00:00",
+                                        "type": "product"}
     assert log[-1][2]["params"]["search"] == "quạt" and log[-1][2]["params"]["status"] == "any"
     calls(get=Resp([{"id": 2, "title": {"rendered": "Bài"}, "status": "publish", "link": "l", "modified": "m"}]))
     items, total = wp_client.list_items(CFG, "post")

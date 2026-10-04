@@ -9,7 +9,7 @@ from services import posts as post_service
 from services import sites as site_service
 from services.errors import PublishError, ServiceError
 from ui import taxonomy_records as tr
-from ui.common import extract_file_paths, extract_id_from_choice
+from ui.common import extract_file_paths, extract_id_from_choice, merge_image_selection
 from ui.preview import make_preview_html
 from ui.sync_panel import build_history_sync
 
@@ -98,6 +98,19 @@ def _info_md(d: post_service.PostDetail, date_label: str, date_value: str, image
     return "\n".join(lines)
 
 
+_UNSET = object()
+
+
+def _final_images(gallery_images, new_images_input) -> list[str] | None:
+    """
+    Bộ ảnh sẽ lưu/đăng. Có album (UI): ảnh còn lại trong album + ảnh mới thêm (xoá hết → danh sách rỗng).
+    Không có album (gọi trực tiếp): hành vi cũ — ảnh tải lên thay thế, không có thì giữ nguyên (None).
+    """
+    if gallery_images is _UNSET:
+        return extract_file_paths(new_images_input) or None
+    return merge_image_selection(gallery_images, new_images_input)
+
+
 def on_select_history_post(choice_str: str) -> tuple:
     """Tải thông tin chi tiết và hình ảnh của bài viết được chọn."""
     post_id = extract_id_from_choice(choice_str)
@@ -140,6 +153,7 @@ def on_save_history_edits(
     new_images_input=None,
     site_filter: str = ALL,
     status_filter: str = ALL,
+    gallery_images=_UNSET,
 ) -> tuple:
     """Lưu các thay đổi nội dung và hình ảnh của bài viết vào database, cập nhật bảng và giữ nguyên bài đang chọn."""
     post_id = extract_id_from_choice(choice_str)
@@ -148,7 +162,7 @@ def on_save_history_edits(
 
     try:
         d = post_service.save_post_edits(
-            post_id, title, short_desc, reg_price, sale_price, raw_html, extract_file_paths(new_images_input)
+            post_id, title, short_desc, reg_price, sale_price, raw_html, _final_images(gallery_images, new_images_input)
         )
     except ServiceError as e:
         return f"❌ {e.message}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
@@ -185,11 +199,12 @@ def on_publish_history_post(
     new_images_input=None,
     site_filter: str = ALL,
     status_filter: str = ALL,
+    gallery_images=_UNSET,
 ) -> tuple:
     """Đăng ngay bài viết đã lưu kèm hình ảnh lên WordPress/WooCommerce và cập nhật trạng thái."""
     return _publish_history(
         False, choice_str, title, short_desc, reg_price, sale_price, raw_html, post_type, post_status,
-        new_images_input, site_filter, status_filter,
+        new_images_input, site_filter, status_filter, gallery_images,
     )
 
 
@@ -205,11 +220,12 @@ def on_update_history_post(
     new_images_input=None,
     site_filter: str = ALL,
     status_filter: str = ALL,
+    gallery_images=_UNSET,
 ) -> tuple:
     """Cập nhật (ghi đè) bài WordPress đã đăng/đã liên kết của bài này thay vì đăng thêm bản mới."""
     return _publish_history(
         True, choice_str, title, short_desc, reg_price, sale_price, raw_html, post_type, post_status,
-        new_images_input, site_filter, status_filter,
+        new_images_input, site_filter, status_filter, gallery_images,
     )
 
 
@@ -226,6 +242,7 @@ def _publish_history(
     new_images_input=None,
     site_filter: str = ALL,
     status_filter: str = ALL,
+    gallery_images=_UNSET,
 ) -> tuple:
     verb = "cập nhật" if update_existing else "đăng"
     post_id = extract_id_from_choice(choice_str)
@@ -235,7 +252,7 @@ def _publish_history(
     try:
         out = post_service.publish_saved_post(
             post_id, title, short_desc, reg_price, sale_price, raw_html, post_type, post_status,
-            extract_file_paths(new_images_input),
+            _final_images(gallery_images, new_images_input),
             update_existing=update_existing,
         )
     except PublishError as e:
@@ -386,16 +403,21 @@ def build_tab_history(db_session=None) -> dict:
 
             # Phần hình ảnh của bài viết
             gr.Markdown("#### 🖼️ Quản Lý Hình Ảnh Sản Phẩm")
+            gr.Markdown(
+                "*Bấm vào ảnh để xem lớn, bấm ✕ trên ảnh để xoá khỏi bài. Ảnh đứng đầu là ảnh đại diện. "
+                "Nhớ bấm **Lưu** hoặc **Đăng/Cập nhật** để áp dụng.*"
+            )
             images_gallery = gr.Gallery(
-                label="Album ảnh hiện có của bài viết",
+                label="Album ảnh của bài viết",
                 value=init_images,
                 columns=4,
                 rows=1,
-                height=150,
+                height=180,
                 object_fit="contain",
+                interactive=True,
             )
             images_upload = gr.File(
-                label="📁 Tải thêm hoặc cập nhật ảnh mới cho bài viết",
+                label="📁 Thêm ảnh mới vào album (không thay thế ảnh đang có)",
                 file_count="multiple",
                 file_types=["image"],
                 interactive=True,
@@ -547,7 +569,7 @@ def build_tab_history(db_session=None) -> dict:
 
     save_edits_btn.click(
         fn=on_save_history_edits,
-        inputs=[post_selector, title_input, short_desc_input, reg_price_input, sale_price_input, html_editor, images_upload, site_filter, status_filter],
+        inputs=[post_selector, title_input, short_desc_input, reg_price_input, sale_price_input, html_editor, images_upload, site_filter, status_filter, images_gallery],
         outputs=[action_result_box, preview_output, images_gallery, history_table, post_selector, post_info_box, images_upload],
     )
 
@@ -565,6 +587,7 @@ def build_tab_history(db_session=None) -> dict:
             images_upload,
             site_filter,
             status_filter,
+            images_gallery,
         ],
         outputs=[action_result_box, history_table, post_selector, images_gallery, post_info_box, images_upload],
         show_progress=True,
@@ -584,6 +607,7 @@ def build_tab_history(db_session=None) -> dict:
             images_upload,
             site_filter,
             status_filter,
+            images_gallery,
         ],
         outputs=[action_result_box, history_table, post_selector, images_gallery, post_info_box, images_upload],
         show_progress=True,

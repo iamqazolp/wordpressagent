@@ -5,9 +5,13 @@ Phần xử lý ảnh thật nằm ở core/image_processor.py; ở đây chỉ 
 """
 from __future__ import annotations
 
+import hashlib
 import logging
+import shutil
+from pathlib import Path
 
 from core.image_processor import process_image_batch
+from db.database import DATA_DIR
 from services import sites as site_service
 
 logger = logging.getLogger(__name__)
@@ -73,3 +77,39 @@ def preview_processed(
         },
     )
     return [r["output_path"] for r in results if r.get("output_path")], results
+
+
+POST_IMAGES_DIR = DATA_DIR / "post_images"
+
+
+def persist_images(image_paths: list[str] | None) -> list[str]:
+    """
+    Lưu bền các ảnh người dùng chọn vào data/post_images/<hash>/<tên>.
+
+    Ảnh chọn từ giao diện nằm trong thư mục tạm của Gradio và có thể bị xoá, nên phải sao chép về
+    thư mục dữ liệu trước khi ghi đường dẫn vào DB. Ảnh đã nằm sẵn trong data/ thì giữ nguyên;
+    đường dẫn không tồn tại giữ nguyên (không làm mất tham chiếu). Giữ thứ tự, bỏ trùng.
+    """
+    out: list[str] = []
+    data_root = DATA_DIR.resolve()
+    for p in image_paths or []:
+        src = Path(p)
+        if not src.is_file():
+            res = str(p)
+        else:
+            try:
+                inside = src.resolve().is_relative_to(data_root)
+            except OSError:
+                inside = False
+            if inside:
+                res = str(src)
+            else:
+                digest = hashlib.sha1(src.read_bytes()).hexdigest()[:10]
+                dest = POST_IMAGES_DIR / digest / src.name
+                if not dest.exists():
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, dest)
+                res = str(dest)
+        if res not in out:
+            out.append(res)
+    return out

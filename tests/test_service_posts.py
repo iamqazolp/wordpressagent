@@ -207,3 +207,20 @@ def test_history_table_shows_sale_price(mem_db):
     df = tab_history.fetch_history_data()
     assert list(df.columns)[7:9] == ["Giá gốc", "Giá KM"]
     assert dict(zip(df["Sản phẩm"], df["Giá KM"])) == {"A": "80", "B": "-"}
+
+
+def test_save_post_edits_images_none_keeps_empty_clears(world, tmp_path, monkeypatch):
+    from services import images as images_svc
+    data = tmp_path / "data"
+    data.mkdir()
+    monkeypatch.setattr(images_svc, "DATA_DIR", data)
+    monkeypatch.setattr(images_svc, "POST_IMAGES_DIR", data / "post_images")
+    (h1, _), _, _ = world
+    a = tmp_path / "new.jpg"
+    a.write_bytes(b"x")
+    d = svc.save_post_edits(h1, "t", "", "", "", "<p>x</p>", [str(a)])
+    assert len(d.image_paths) == 1 and d.image_paths[0].startswith(str(data))
+    d = svc.save_post_edits(h1, "t", "", "", "", "<p>x</p>", None)
+    assert len(d.image_paths) == 1                              # None = giữ nguyên
+    d = svc.save_post_edits(h1, "t", "", "", "", "<p>x</p>", [])
+    assert d.image_paths == []                                   # [] = xoá hết

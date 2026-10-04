@@ -16,6 +16,7 @@ from core import pipeline
 from core.timeutil import now_vn
 from db import crud
 from db.database import session_scope
+from services import images as images_svc
 from services import taxonomy as taxonomy_svc
 from services.errors import PublishError, ServiceError
 
@@ -166,7 +167,10 @@ def save_post_edits(
     raw_html: str,
     new_image_paths: list[str] | None = None,
 ) -> PostDetail:
-    """Lưu nội dung/giá/ảnh (ảnh mới thay thế danh sách cũ nếu có). Trả bài sau khi lưu."""
+    """
+    Lưu nội dung/giá/ảnh. new_image_paths: None = giữ nguyên ảnh cũ; danh sách (kể cả rỗng) = thay thế
+    toàn bộ ảnh của bài bằng danh sách này. Trả bài sau khi lưu.
+    """
     with session_scope() as db:
         h = crud.get_post_history_by_id(db, post_id)
         if not h:
@@ -176,8 +180,8 @@ def save_post_edits(
         h.regular_price = regular_price.strip()
         h.sale_price = sale_price.strip()
         h.raw_html = raw_html.strip()
-        if new_image_paths:
-            h.image_paths_json = json.dumps(new_image_paths, ensure_ascii=False)
+        if new_image_paths is not None:
+            h.image_paths_json = json.dumps(images_svc.persist_images(new_image_paths), ensure_ascii=False)
         db.commit()
         return _detail(h)
 
@@ -215,8 +219,8 @@ def publish_saved_post(
         if not site_config:
             raise ServiceError("Không tìm thấy thông tin xác thực của website!")
 
-        # Ưu tiên ảnh mới tải lên; nếu không thì dùng ảnh đã lưu
-        image_paths = list(new_image_paths) if new_image_paths else _image_paths(h)
+        # new_image_paths: None = dùng ảnh đã lưu; danh sách (kể cả rỗng) = bộ ảnh người dùng vừa chọn
+        image_paths = images_svc.persist_images(new_image_paths) if new_image_paths is not None else _image_paths(h)
         valid_images = [p for p in image_paths if Path(p).exists()]
 
         existing_id = None
@@ -243,8 +247,8 @@ def publish_saved_post(
         if not res.get("success"):
             raise PublishError(res.get("error") or "Lỗi không xác định")
 
-        if new_image_paths:
-            h.image_paths_json = json.dumps(new_image_paths, ensure_ascii=False)
+        if new_image_paths is not None:
+            h.image_paths_json = json.dumps(image_paths, ensure_ascii=False)
         h.title = title
         h.raw_html = raw_html
         h.short_description = short_description.strip()

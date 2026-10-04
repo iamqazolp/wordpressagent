@@ -26,7 +26,12 @@ logger = logging.getLogger(__name__)
 def main():
     """Khởi động ứng dụng WordPress Agent."""
     print("\n" + "=" * 55)
-    print("  🌟 WordPress Agent — Đa Website & Tự Động Hóa")
+    try:
+        from pathlib import Path
+        version = (Path(__file__).parent / "VERSION").read_text(encoding="utf-8").strip()
+    except OSError:
+        version = "dev"
+    print(f"  🌟 WordPress Agent v{version} — Đa Website & Tự Động Hóa")
     print("=" * 55)
 
     # Khởi tạo database (tạo bảng + migrate sites.json nếu có)
@@ -34,6 +39,10 @@ def main():
     from db import crud
 
     init_db()
+
+    # Sao lưu DB tự động (tối đa 1 lần/20 giờ, giữ 7 bản). Không bao giờ làm hỏng việc khởi động.
+    from core.backup import auto_backup
+    auto_backup()
 
     # Hiển thị thông tin websites
     db = SessionLocal()

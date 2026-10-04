@@ -1,153 +1,145 @@
-# WordPress Agent - AI Viết & Đăng Bài Đa Nền Tảng (WordPress / WooCommerce)
+# WordPress Agent — AI viết & đăng bài đa website (WordPress / WooCommerce)
 
-Hệ thống Agent tự động hóa quy trình nghiên cứu, tạo bài viết chuẩn SEO và đăng bài đồng thời lên nhiều website WordPress / WooCommerce với tính năng **chống trùng lặp nội dung (Randomize)**.
-
----
-
-## ✨ Tính Năng Nổi Bật
-
-- 🤖 **AI Content chuẩn SEO & Kỹ thuật:** Tạo bài viết giàu thành phần (Bảng thông số HTML chuẩn, phân tích cấu tạo chi tiết, ưu điểm, slideshow ảnh sản phẩm), không văn mẫu sáo rỗng (*anti-slop*), không bịa thông tin liên hệ.
-- 🌐 **Đăng đồng thời nhiều Website:** Chọn một hoặc nhiều website cùng lúc chỉ bằng các ô tích chọn (*Checkbox*).
-- 🎲 **Tính năng Randomize độc bản:** Khi chọn nhiều website, AI tự động thay đổi văn phong, góc nhìn trọng tâm và cấu trúc câu để mỗi website sở hữu một bài viết **duy nhất**, tránh thuật toán phạt trùng lặp nội dung (*Duplicate Content*) của Google nhưng vẫn bảo toàn 100% bảng thông số kỹ thuật.
-- ⚙️ **Quản lý Website trực quan:** Thêm, chỉnh sửa, xóa và kiểm tra kết nối (*Test Connection*) các website trực tiếp trên giao diện UI mà không cần can thiệp code hay khởi động lại server.
-- 📝 **Tùy chỉnh gợi ý viết bài:** Cho phép người dùng nhập yêu cầu riêng, phong cách mong muốn hoặc lưu ý kỹ thuật để AI bám sát khi tạo bài.
-- 🖼️ **Xem trước (Preview) theo từng trang:** Kiểm tra nội dung, tiêu đề và hình ảnh của từng website trước khi quyết định bấm đăng hàng loạt.
-- 📦 **Linh hoạt hình thức đăng:** Hỗ trợ đăng dưới dạng **Sản phẩm WooCommerce** (đầy đủ giá, ảnh đại diện, gallery, mô tả ngắn & chi tiết) hoặc **Bài viết Blog WordPress**.
+Công cụ chạy ngay trên máy của bạn: nhập tên sản phẩm → AI viết bài chuẩn SEO → xem trước, chỉnh sửa → đăng (hoặc hẹn giờ đăng) lên một hoặc nhiều website WordPress / WooCommerce. Mỗi website nhận một phiên bản nội dung khác nhau để tránh trùng lặp.
 
 ---
 
-## 🛠️ Yêu Cầu Hệ Thống
+## ✨ Tính năng
 
-- **Python:** 3.10 trở lên
-- **Hệ điều hành:** macOS, Linux hoặc Windows
+- 🤖 **AI viết bài chuẩn SEO:** bảng thông số, ưu điểm, mô tả ngắn; có thể nhập gợi ý riêng cho AI. Có thanh điểm SEO tham khảo (không chặn đăng).
+- 🌐 **Đăng nhiều website cùng lúc**, mỗi site một bản nội dung khác nhau (Randomize).
+- 🏷️ **Danh mục & Tag thông minh:** AI gợi ý danh mục có thật trên website + tag; sửa tay được ở mọi bước (kể cả bài đã lưu và bài đã hẹn giờ).
+- 🖼️ **Xử lý ảnh:** nén/đổi kích thước, chèn logo watermark, tách nền (tuỳ chọn).
+- 📦 **Hàng loạt từ CSV / Excel.**
+- 📅 **Hẹn giờ đăng tự động** (giờ Việt Nam, GMT+7).
+- 📚 **Kho bài viết:** lưu nháp, sửa, đăng lại, **cập nhật bài đã đăng** (không đăng trùng), liên kết bài WordPress có sẵn.
+- 🔍 **Phát hiện bài trùng** trên website trước khi đăng.
+- 🌐 **Xem sản phẩm/bài đang có trên WordPress** (chỉ đọc) và làm mới trạng thái bài đã đăng.
+- 📊 **Dashboard:** số bài theo trạng thái, biểu đồ 30 ngày, bài gần đây, tình trạng kết nối website.
 
 ---
 
-## 🚀 Hướng Dẫn Cài Đặt
+## 🚀 Cài đặt (làm một lần)
 
-### 1. Tạo môi trường ảo & Cài đặt thư viện
+**Cần:** Python **3.10 trở lên** (khuyến nghị 3.12) — tải tại <https://www.python.org/downloads/> (trên Windows nhớ tick **"Add python.exe to PATH"**) và kết nối Internet.
+
+1. Giải nén gói `wordpress-agent-x.y.z.zip` vào một thư mục cố định (ví dụ `C:\WordPressAgent` hoặc `~/WordPressAgent`).
+2. Chạy file cài đặt:
+   - **Windows:** bấm đúp `install.bat`
+   - **macOS / Linux:** mở Terminal trong thư mục đó, chạy `./install.sh`
+3. Khi cài xong, file `.env` được tạo sẵn (Windows tự mở bằng Notepad). Điền **`GEMINI_API_KEY`** (bắt buộc) rồi lưu lại. Các mục khác có thể để nguyên:
+
+   | Biến | Ý nghĩa |
+   |---|---|
+   | `GEMINI_API_KEY` | Khoá AI (bắt buộc) |
+   | `GEMINI_BASE_URL`, `GEMINI_MODEL` | Địa chỉ/mô hình AI (mặc định đã đặt sẵn) |
+   | `SERP_API_KEY` | Tuỳ chọn: tự tìm tài liệu sản phẩm trên Google. Để trống thì nhập URL tham khảo bằng tay |
+   | `ENCRYPTION_KEY` | **Tự sinh, đừng sửa/xoá** — xem phần Sao lưu |
+   | `APP_USER`, `APP_PASSWORD` | Tuỳ chọn: đặt tên đăng nhập + mật khẩu cho giao diện |
+
+4. Chạy ứng dụng: **Windows** bấm đúp `run.bat` · **macOS/Linux** `./run.sh`. Trình duyệt tự mở tại <http://127.0.0.1:7860>.
+
+> Mặc định ứng dụng **chỉ truy cập được từ chính máy bạn**. Nếu muốn dùng từ máy khác trong mạng, đặt `HOST=0.0.0.0` **và** `APP_USER`/`APP_PASSWORD` trong `.env`.
+
+---
+
+## 🔌 Kết nối website WordPress / WooCommerce
+
+Vào tab **⚙️ Quản Lý Website → ➕ Thêm website mới** và điền:
+
+| Ô | Lấy ở đâu |
+|---|---|
+| **URL** | Địa chỉ website, ví dụ `https://example.com` |
+| **Client Key / Client Secret** (`ck_…` / `cs_…`) | WordPress admin → **WooCommerce → Cài đặt → Nâng cao → REST API → Thêm khoá** (quyền **Đọc/Ghi**) |
+| **WP Username + Application Password** | WordPress admin → **Người dùng → Hồ sơ** → mục **Application Passwords** → đặt tên, bấm *Add*, sao chép mật khẩu. Cần để **tải ảnh lên** và **đăng Blog Post** |
+
+Bấm **🔌 Kiểm tra kết nối** (kiểm tra cả WordPress và WooCommerce) rồi **💾 Lưu**. Mật khẩu/khoá được **mã hoá** trước khi lưu.
+
+---
+
+## 📖 Cách dùng
+
+### 📊 Dashboard
+Tổng quan số bài, biểu đồ, bài gần đây. Bấm **🩺 Kiểm tra kết nối** để xem website nào đang lỗi (không tự chạy khi mở trang).
+
+### ✍️ Tạo & Đăng Bài
+1. Chọn website, template, nhập tên sản phẩm (+ gợi ý cho AI, ảnh, URL tham khảo nếu có) → **🚀 Bắt đầu tạo bài viết**.
+2. Xem trước từng website, sửa tiêu đề/HTML/danh mục/tag/giá.
+3. **🔍 Kiểm tra bài trùng** (khuyến nghị), rồi chọn:
+   - **💾 Lưu vào hệ thống** (chưa đăng), hoặc
+   - **📤 Đăng lên các website đã chọn** (mặc định ở trạng thái *draft* để duyệt trước), hoặc
+   - **⏰ Hẹn giờ đăng** (chọn mốc nhanh hoặc ngày giờ cụ thể).
+
+### 📦 Tạo Hàng Loạt
+Tải file `.csv`/`.xlsx` với các cột (tiếng Việt hoặc Anh đều được): `product_name`/`Tên sản phẩm` *(bắt buộc)*, `ref_urls`, `notes`, `regular_price`/`Giá gốc`, `sale_price`/`Giá khuyến mại`. Có file mẫu trong `samples/`. Chọn **chỉ lưu nháp** hoặc **tạo & đăng ngay**.
+
+### 📅 Lịch Đăng Bài
+Theo dõi/hủy/xóa các lịch hẹn; sửa danh mục & tag của lịch còn *chờ*.
+
+> ⚠️ **Lịch hẹn chỉ chạy khi ứng dụng đang mở.** Nếu tắt máy/tắt ứng dụng đúng giờ hẹn, bài sẽ không được đăng.
+
+### 📚 Kho Bài Viết & Lịch Sử
+- Sửa nội dung/giá/ảnh, **🚀 Đăng ngay**, hoặc **⬆️ Cập nhật bài WP đã có** (ghi đè đúng bài đã đăng, không tạo bản trùng; ảnh được tải lại).
+- Mục **🔄 Đồng bộ với WordPress**: kiểm tra bài trùng · liên kết với bài WordPress có sẵn (nhập ID bài) · làm mới trạng thái (nháp → đã đăng, thùng rác…) · **chuyển bài vào thùng rác WordPress** (phải tick ô xác nhận; khôi phục được trong wp-admin, **không xóa vĩnh viễn**).
+- **🗑️ Xóa bài này** chỉ xóa bản ghi trong ứng dụng, không đụng website.
+
+### 🌐 Trên WordPress
+Xem danh sách sản phẩm/bài đang có trên website (chỉ đọc), tìm theo tên, lấy **WP ID** để liên kết.
+
+### 📝 Quản Lý Template · ⚙️ Quản Lý Website
+Quản lý mẫu prompt theo ngành hàng; thêm/sửa/xóa/kiểm tra website, logo watermark.
+
+---
+
+## 💾 Sao lưu & khôi phục (quan trọng)
+
+Dữ liệu của bạn nằm ở: thư mục `data/` (cơ sở dữ liệu, logo) và file `.env`. **Mất `ENCRYPTION_KEY` trong `.env` = không giải mã lại được mật khẩu các website đã lưu.**
+
+- **Tự động:** mỗi lần mở app, nếu đã quá 20 giờ kể từ bản trước thì tự chụp cơ sở dữ liệu vào `data/backups/` (giữ 7 bản).
+- **Sao lưu đầy đủ (nên làm định kỳ và trước khi cập nhật):** Windows bấm đúp `backup.bat` · macOS/Linux `./backup.sh`. Tạo file `backups/wordpress-agent-backup-….zip` gồm cơ sở dữ liệu + `.env` + logo. **Hãy chép file này ra ổ ngoài/nơi riêng tư** — nó chứa khoá mã hoá và API key, đừng gửi công khai.
+- **Khôi phục:** tắt ứng dụng, rồi chạy `python tools/backup.py restore <file.zip>` (trong môi trường `.venv`: Windows `.venv\Scripts\python tools\backup.py restore file.zip`, macOS/Linux `.venv/bin/python tools/backup.py restore file.zip`). Dữ liệu hiện tại được lưu thành bản an toàn trước khi ghi đè.
+
+## ⬆️ Cập nhật phiên bản mới
+
+1. **Sao lưu đầy đủ** như trên.
+2. Tắt ứng dụng, giải nén gói mới **đè lên thư mục cũ** (gói không chứa `data/` và `.env` nên dữ liệu của bạn không bị ghi đè).
+3. Chạy lại `install.bat` / `./install.sh` (cập nhật thư viện), rồi `run.bat` / `./run.sh`. Cấu trúc dữ liệu tự nâng cấp và tự chụp bản sao lưu trước khi nâng cấp.
+
+---
+
+## ⚠️ Lưu ý
+
+- Chạy **một cửa sổ ứng dụng** tại một thời điểm (chạy hai bản cùng dữ liệu sẽ làm lịch hẹn đăng bị trùng).
+- Mọi thời gian trong ứng dụng đều theo **giờ Việt Nam (GMT+7)**.
+- Nội dung do AI viết: luôn xem lại trước khi công khai. Điểm SEO chỉ mang tính tham khảo.
+- Mặc định bài đăng ở trạng thái **Bản nháp** để bạn duyệt trước khi xuất bản.
+
+## 🛟 Xử lý sự cố
+
+| Hiện tượng | Cách xử lý |
+|---|---|
+| `install` báo không có Python | Cài Python 3.10+ (tick *Add to PATH* trên Windows) rồi chạy lại |
+| Mở app báo chưa cấu hình `GEMINI_API_KEY` | Điền khoá vào `.env`, tắt và chạy lại |
+| Kiểm tra kết nối báo lỗi WC/WP | Kiểm tra URL (có `https://`), khoá WooCommerce quyền Đọc/Ghi, Application Password; website phải bật REST API |
+| Không tải được ảnh | Cần điền **WP Username + Application Password** của website |
+| Cổng 7860 đang được dùng | Đặt `PORT=7861` trong `.env` |
+| Cần hỗ trợ | Chụp màn hình cửa sổ đen (log) khi lỗi và gửi cho người hỗ trợ — **đừng** gửi file `.env` |
+
+## 🔒 Bảo mật
+
+- Khoá/mật khẩu website được mã hoá (Fernet) trước khi lưu vào `data/wordpress_agent.db`; khoá mã hoá nằm trong `.env`.
+- `.env`, `data/` không nằm trong gói phát hành và không nên chia sẻ.
+- Ứng dụng mặc định chỉ lắng nghe trên `127.0.0.1` (chỉ máy bạn truy cập được).
+
+---
+
+## 🧑‍💻 Dành cho nhà phát triển
 
 ```bash
-# Tạo virtual environment
-python3 -m venv .venv
-
-# Kích hoạt virtual environment
-# Trên macOS / Linux:
-source .venv/bin/activate
-# Trên Windows:
-# .venv\Scripts\activate
-
-# Cài đặt các thư viện cần thiết
-pip install -r requirements.txt
+pip install -r requirements.lock      # hoặc requirements.txt
+pip install -r requirements-dev.txt   # pytest, pyflakes
+python -m pytest -q                   # chạy toàn bộ test
+python tools/make_release.py          # đóng gói dist/wordpress-agent-<VERSION>.zip (chỉ file đã commit)
 ```
 
-### 2. Cấu hình file `.env`
-
-Tạo hoặc cập nhật file `.env` ở thư mục gốc:
-
-```env
-# Gemini API Key (Bắt buộc)
-# Có thể dùng API key trực tiếp từ Google AI Studio hoặc qua ShopAIKey
-GEMINI_API_KEY=your_gemini_api_key
-
-# SerpAPI Key (Tùy chọn - Dùng để tự động tìm kiếm tài liệu sản phẩm trên Google)
-SERP_API_KEY=your_serpapi_key
-```
-
-> [!NOTE]
-> Thông tin kết nối các website WordPress/WooCommerce hiện tại đã được chuyển sang quản lý trực quan tại giao diện tab **"⚙️ Quản Lý Website"** và lưu trữ an toàn trong file `config/sites.json` (file này đã được đưa vào `.gitignore` để đảm bảo bảo mật tuyệt đối).
-
-### 3. Khởi động ứng dụng
-
-```bash
-python app.py
-```
-
-Ứng dụng sẽ khởi chạy tại: **[http://localhost:7860](http://localhost:7860)**
-
----
-
-## 📖 Hướng Dẫn Sử Dụng
-
-### Tab 1: ✍️ Tạo & Đăng Bài Viết
-
-1. **Chọn website cần đăng:** Tích chọn 1 hoặc nhiều website trong danh sách.
-2. **Chọn Prompt Template:** Chọn mẫu prompt viết bài phù hợp theo từng ngành hàng.
-3. **Bật/Tắt tính năng Randomize:** 
-   - *Bật (Mặc định):* Mỗi trang web sẽ nhận được một phiên bản bài viết độc bản, phong cách hành văn và góc nhìn khác nhau.
-   - *Tắt:* Tất cả các website được chọn sẽ dùng chung một nội dung bài viết.
-4. **Nhập thông tin sản phẩm:**
-   - **Tên sản phẩm:** (Ví dụ: `Pa lăng cáp điện 1T x 12M`)
-   - **Gợi ý viết bài (Tùy chọn):** Nhập yêu cầu riêng (ví dụ: *"Nhấn mạnh động cơ 100% dây đồng và chuẩn kháng nước IP54"*).
-   - **Hình ảnh sản phẩm:** Tải lên một hoặc nhiều hình ảnh thực tế.
-   - **Nguồn tham khảo (Tùy chọn):** Nhập URL bài viết mẫu hoặc để trống để AI tự động tìm kiếm.
-5. **Tạo bài viết:** Nhấn nút **"🚀 Bắt đầu tạo bài viết"** và chờ AI xử lý.
-6. **Xem trước & Chỉnh sửa trực tiếp:** 
-   - Dùng ô chọn website để kiểm tra nội dung và tiêu đề bài viết tạo cho từng trang.
-   - Chỉnh sửa nhanh tiêu đề ngay trên ô text.
-   - Bấm **"🔄 Chuyển đổi chế độ (Xem / Chỉnh sửa HTML)"** để mở trình sửa mã HTML trực tiếp, sau đó bấm **"💾 Lưu mã HTML đã sửa"**.
-8. **Lưu trữ hoặc Đăng bài:**
-   - **Tùy chọn A - Lưu nháp trên hệ thống:** Nhấn nút **"💾 Lưu bài vào hệ thống (Không đăng ngay)"** để lưu toàn bộ nội dung bài viết và thông số vào cơ sở dữ liệu. Bạn có thể xem lại, sửa đổi và đăng bất cứ lúc nào.
-   - **Tùy chọn B - Đăng ngay lên Web:** Chọn hình thức đăng (*Sản phẩm WooCommerce* hoặc *Bài viết Blog*) rồi nhấn **"📤 Đăng lên tất cả website đã chọn"**.
-
----
-
-### Tab 2: 📦 Tạo & Đăng Hàng Loạt (CSV / Excel)
-
-1. **Hỗ trợ định dạng:** Tải lên file `.csv` hoặc bảng tính Excel (`.xlsx`, `.xls`).
-2. **Cấu trúc cột linh hoạt (tiếng Việt hoặc tiếng Anh):**
-   - `product_name` hoặc `Tên sản phẩm` *(bắt buộc)*
-   - `ref_urls` hoặc `URL tham khảo` *(tùy chọn)*
-   - `notes` hoặc `Ghi chú AI` *(tùy chọn)*
-   - `regular_price` hoặc `Giá gốc` *(tùy chọn)*
-   - `sale_price` hoặc `Giá khuyến mại` *(tùy chọn)*
-3. **Thao tác hàng loạt:**
-   - **Tùy chọn 1 (Chỉ tạo bài hàng loạt):** Tự động tạo bài và **lưu toàn bộ vào CSDL hệ thống (Kho Bài Viết)** ở trạng thái nháp mà không đẩy lên WooCommerce.
-   - **Tùy chọn 2 (Tạo & Đăng ngay):** Tự động tạo bài và đăng trực tiếp lên tất cả website được chọn.
-
----
-
-### Tab 3: 📅 Lịch Đăng Bài (Scheduler)
-
-1. **Lên lịch đăng bài tự động:** Chọn ngày giờ cụ thể để hệ thống tự động xuất bản bài viết lên các website mà không cần thao tác thủ công.
-2. **Quản lý tác vụ:** Theo dõi danh sách công việc đang chờ chạy, hủy hoặc chỉnh sửa lịch trình dễ dàng.
-
----
-
-### Tab 4: 📚 Kho Bài Viết & Lịch Sử Đăng
-
-1. **Kho lưu trữ bài viết:** Quản lý toàn bộ bài viết đã lưu nháp trên hệ thống và các bài đã đăng lên WordPress/WooCommerce.
-2. **Bộ lọc thông minh:** Dễ dàng lọc theo từng website hoặc lọc theo trạng thái (`💾 Đã lưu nháp`, `✅ Đã đăng`, `❌ Lỗi`).
-3. **Chi tiết & Thao tác từng bài:**
-   - Chọn bài viết trong danh sách để xem trước giao diện và mô tả ngắn.
-   - Chỉnh sửa trực tiếp tiêu đề, giá bán, mô tả hoặc sửa mã nguồn HTML.
-   - Bấm **"🚀 Đăng bài này lên Website ngay"** để xuất bản bài viết đã lưu lên WooCommerce bất cứ lúc nào.
-   - Bấm **"🗑️ Xóa bài này"** để dọn dẹp kho lưu trữ.
-
----
-
-### Tab 5: 📝 Quản Lý Template
-
-1. **Quản lý mẫu prompt:** Tạo, xem, chỉnh sửa hoặc xóa các mẫu prompt viết bài theo từng ngành hàng cụ thể.
-2. **Mẫu mặc định tối ưu:** Tích hợp sẵn mẫu prompt chuẩn kỹ thuật, tự động giảm thiểu lặp từ và tối ưu bảng thông số.
-
----
-
-### Tab 6: ⚙️ Quản Lý Website
-
-1. **Xem danh sách website:** Bảng thống kê hiển thị tên website, đường dẫn URL, và trạng thái cấu hình.
-2. **Thêm website mới:**
-   - Trong dropdown chọn: `➕ Thêm website mới`.
-   - Nhập **Tên hiển thị**, **URL**, **WooCommerce Client Key (`ck_...`)**, **Client Secret (`cs_...`)**.
-   - Nhấn **"🔌 Kiểm tra kết nối"** để hệ thống kiểm tra cả WordPress REST API và WooCommerce API.
-   - Nhấn **"💾 Lưu cấu hình website"**.
-3. **Chỉnh sửa / Xóa:**
-   - Chọn website cần sửa trong danh sách để cập nhật thông tin hoặc bấm **"🗑️ Xóa website này"**.
-
----
-
-## 🔒 Bảo Mật & Lưu Trữ Dữ Liệu
-
-- **Cơ sở dữ liệu SQLite & Mã hóa Fernet:** Toàn bộ thông tin nhạy cảm (WooCommerce Client Key, Secret Key, WordPress Application Password) được mã hóa bằng thuật toán `Fernet` (khóa mã hóa sinh ngẫu nhiên lưu trong `.env`) và lưu trữ trong CSDL SQLite (`data/wordpress_agent.db`).
-- **An toàn mã nguồn:** Các file nhạy cảm (`.env`, `data/`, `config/sites.json*`) đều nằm trong `.gitignore` và không bao giờ bị đẩy lên kho mã nguồn.
-- **Trạng thái bài đăng an toàn:** Mặc định các bài đăng sẽ được đưa lên website ở trạng thái **Bản nháp (Draft)** để quản trị viên có thể xem xét và phê duyệt trước khi xuất bản chính thức.
+Kiến trúc phân lớp `ui/ → services/ → core/ → db/` (có test bảo vệ) — xem [ARCHITECTURE.md](ARCHITECTURE.md).

@@ -51,7 +51,7 @@ def get_db():
         db.close()
 
 def _backup_db_file(tag: str = "manual") -> Path | None:
-    """Sao lưu DB bằng sqlite3 backup API (an toàn khi app đang chạy). Giữ tối đa 10 bản gần nhất."""
+    """Sao lưu DB bằng sqlite3 backup API (an toàn khi app đang chạy). Giữ tối đa 10 bản gần nhất của cùng một `tag`."""
     import sqlite3
     from core.timeutil import now_vn
 
@@ -67,7 +67,7 @@ def _backup_db_file(tag: str = "manual") -> Path | None:
     finally:
         dst.close()
         src.close()
-    for old in sorted(backup_dir.glob("wordpress_agent_*.db"), key=lambda p: p.stat().st_mtime)[:-10]:
+    for old in sorted(backup_dir.glob(f"wordpress_agent_{tag}_*.db"), key=lambda p: p.stat().st_mtime)[:-10]:
         old.unlink(missing_ok=True)
     logger.info(f"Đã sao lưu DB: {dest}")
     return dest

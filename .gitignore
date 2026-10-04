@@ -40,3 +40,7 @@ temp/
 enter_spammer.py
 spam_enter.sh
 .gradio/
+
+# Bản phát hành & sao lưu
+dist/
+backups/

@@ -26,7 +26,8 @@ EXCLUDE = (
 # Bắt buộc phải có trong bản phát hành (kiểm tra để không giao thiếu)
 REQUIRED = ("app.py", "requirements.txt", "requirements.lock", "install.sh", "install.bat", "run.sh", "run.bat",
             ".env.example", "README.md", "VERSION", "core/wp_client.py", "ui/main_ui.py", "tools/backup.py", "tools/init_env.py")
-FORBIDDEN_PREFIXES = ("data/", "config/sites.json", ".env", "backups/", ".venv/", "dist/")
+FORBIDDEN_PREFIXES = ("data/", "config/sites.json", "backups/", ".venv/", "dist/")
+FORBIDDEN_EXACT = (".env",)   # .env.example là file mẫu, được phép
 
 
 def _excluded(name: str, prefix: str) -> bool:
@@ -55,7 +56,7 @@ def build(ref: str = "HEAD", out_dir: Path | None = None) -> Path:
             kept.append(info.filename[len(prefix):])
 
     missing = [r for r in REQUIRED if r not in kept]
-    leaked = [k for k in kept if k.startswith(FORBIDDEN_PREFIXES)]
+    leaked = [k for k in kept if k.startswith(FORBIDDEN_PREFIXES) or k in FORBIDDEN_EXACT]
     if missing or leaked:
         out.unlink(missing_ok=True)
         raise SystemExit(f"✗ Bản phát hành không hợp lệ. Thiếu: {missing or '-'} · Lọt vào: {leaked or '-'}")

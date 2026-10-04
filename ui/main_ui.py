@@ -18,6 +18,9 @@ from ui.taxonomy_records import history_load as history_load_taxonomy
 from ui.tab_templates import (
     build_tab_templates, handle_save_template, handle_delete_template
 )
+from ui.sync_panel import check_duplicates_for_articles
+from ui.tab_dashboard import build_tab_dashboard
+from ui.tab_remote import build_tab_remote, refresh_sites as refresh_remote_sites
 from ui.tab_sites import (
     build_tab_sites, handle_save_site, handle_delete_site, handle_test_connection_ui, on_select_site_for_edit, handle_clear_watermark
 )
@@ -51,6 +54,10 @@ def create_app() -> gr.Blocks:
         """)
 
         with gr.Tabs():
+            # Tab 0: Dashboard (tab đầu tiên)
+            with gr.TabItem("📊 Dashboard"):
+                dashboard_comps = build_tab_dashboard()
+
             # Tab 1: Tạo & Đăng Bài đơn lẻ
             with gr.TabItem("✍️ Tạo & Đăng Bài"):
                 create_comps = build_tab_create()
@@ -66,6 +73,10 @@ def create_app() -> gr.Blocks:
             # Tab 4: Kho bài viết & Lịch sử
             with gr.TabItem("📚 Kho Bài Viết & Lịch Sử") as tab_history_item:
                 history_comps = build_tab_history()
+
+            # Tab 4b: Xem sản phẩm/bài đang có trên WordPress (chỉ đọc)
+            with gr.TabItem("🌐 Trên WordPress") as tab_remote_item:
+                remote_comps = build_tab_remote()
 
             # Tab 5: Quản lý Template
             with gr.TabItem("📝 Quản Lý Template"):
@@ -237,6 +248,12 @@ def create_app() -> gr.Blocks:
             new_val = choices[0] if choices else None
             return msg, df, gr.update(choices=choices, value=new_val)
 
+        create_comps['check_dup_btn'].click(
+            fn=check_duplicates_for_articles,
+            inputs=[articles_state, create_comps['post_type_selector']],
+            outputs=[create_comps['dup_result']],
+        )
+
         create_comps['publish_btn'].click(
             fn=_on_publish_and_sync,
             inputs=[
@@ -331,6 +348,8 @@ def create_app() -> gr.Blocks:
             inputs=[history_comps['post_selector'], history_comps['post_type_selector']],
             outputs=[history_comps['taxonomy']['categories'], history_comps['taxonomy']['tags'], history_comps['taxonomy']['status']],
         )
+
+        tab_remote_item.select(fn=refresh_remote_sites, inputs=[], outputs=[remote_comps['site']])
 
         # =====================================================================
         # EVENT WIRING (Tab 5: Quản lý Template)

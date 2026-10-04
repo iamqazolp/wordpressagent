@@ -11,6 +11,7 @@ from services.errors import PublishError, ServiceError
 from ui import taxonomy_records as tr
 from ui.common import extract_file_paths, extract_id_from_choice
 from ui.preview import make_preview_html
+from ui.sync_panel import build_history_sync
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,8 @@ _STATUS_LABELS = {
     "published": "✅ Đã đăng",
     "draft": "📝 Nháp WP",
     "failed": "❌ Lỗi",
+    "trashed": "🗑️ Thùng rác WP",
+    "missing": "❓ Không còn trên WP",
 }
 _TABLE_COLUMNS = ["ID", "Sản phẩm", "Tiêu đề", "Website", "Loại", "Trạng thái", "Ảnh", "Giá gốc",
                   "Danh mục / Tag", "Ngày tạo (GMT+7)", "Link WP"]
@@ -183,27 +186,70 @@ def on_publish_history_post(
     status_filter: str = ALL,
 ) -> tuple:
     """Đăng ngay bài viết đã lưu kèm hình ảnh lên WordPress/WooCommerce và cập nhật trạng thái."""
+    return _publish_history(
+        False, choice_str, title, short_desc, reg_price, sale_price, raw_html, post_type, post_status,
+        new_images_input, site_filter, status_filter,
+    )
+
+
+def on_update_history_post(
+    choice_str: str,
+    title: str,
+    short_desc: str,
+    reg_price: str,
+    sale_price: str,
+    raw_html: str,
+    post_type: str,
+    post_status: str,
+    new_images_input=None,
+    site_filter: str = ALL,
+    status_filter: str = ALL,
+) -> tuple:
+    """Cập nhật (ghi đè) bài WordPress đã đăng/đã liên kết của bài này thay vì đăng thêm bản mới."""
+    return _publish_history(
+        True, choice_str, title, short_desc, reg_price, sale_price, raw_html, post_type, post_status,
+        new_images_input, site_filter, status_filter,
+    )
+
+
+def _publish_history(
+    update_existing: bool,
+    choice_str: str,
+    title: str,
+    short_desc: str,
+    reg_price: str,
+    sale_price: str,
+    raw_html: str,
+    post_type: str,
+    post_status: str,
+    new_images_input=None,
+    site_filter: str = ALL,
+    status_filter: str = ALL,
+) -> tuple:
+    verb = "cập nhật" if update_existing else "đăng"
     post_id = extract_id_from_choice(choice_str)
     if not post_id:
-        return "❌ Vui lòng chọn một bài viết để đăng!", gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+        return f"❌ Vui lòng chọn một bài viết để {verb}!", gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
     try:
         out = post_service.publish_saved_post(
             post_id, title, short_desc, reg_price, sale_price, raw_html, post_type, post_status,
             extract_file_paths(new_images_input),
+            update_existing=update_existing,
         )
     except PublishError as e:
         logger.error(f"Đăng bài đã lưu #{post_id} thất bại: {e.message}")
-        return f"❌ Đăng thất bại: {e.message}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+        return f"❌ {verb.capitalize()} thất bại: {e.message}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
     except ServiceError as e:
         return f"❌ {e.message}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
     except Exception as e:
         logger.exception("Lỗi khi đăng bài đã lưu")
-        return f"❌ Đăng thất bại: {str(e)}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+        return f"❌ {verb.capitalize()} thất bại: {str(e)}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
     status_badge = "🟢 Công khai" if out.post_status == "publish" else "📝 Nháp"
+    heading = f"### 🔄 Đã cập nhật bài trên {out.site_name}!\n\n" if out.updated else f"### 🎉 Đăng thành công lên {out.site_name}!\n\n"
     result_msg = (
-        f"### 🎉 Đăng thành công lên {out.site_name}!\n\n"
+        heading +
         f"- **Trạng thái:** {status_badge}\n"
         f"- **Hình ảnh tải lên WP:** {out.uploaded_count}/{len(out.image_paths)} ảnh\n"
         f"- **Link xem:** [{out.post_url}]({out.post_url})\n"
@@ -216,7 +262,7 @@ def on_publish_history_post(
     if out.category_warning:
         result_msg += f"- ⚠️ *Cảnh báo danh mục:* {out.category_warning}\n"
 
-    gr.Info(f"🎉 Đã đăng thành công lên {out.site_name}!")
+    gr.Info(f"🔄 Đã cập nhật bài trên {out.site_name}!" if out.updated else f"🎉 Đã đăng thành công lên {out.site_name}!")
     updated_choices = get_history_post_choices(site_filter, status_filter)
     current_choice = next((c for c in updated_choices if c.startswith(f"#{out.post_id} - ")), None)
 
@@ -374,9 +420,12 @@ def build_tab_history(db_session=None) -> dict:
             with gr.Row():
                 save_edits_btn = gr.Button("💾 Lưu thay đổi nội dung", variant="secondary")
                 publish_single_btn = gr.Button("🚀 Đăng bài này lên Website ngay", variant="primary", size="lg")
+                update_single_btn = gr.Button("⬆️ Cập nhật bài WP đã có (ghi đè)", variant="secondary")
                 delete_btn = gr.Button("🗑️ Xóa bài này", variant="stop")
 
             action_result_box = gr.Markdown("")
+
+            sync_comps = build_history_sync(post_selector, site_filter, status_filter, history_table, fetch_history_data)
 
         with gr.Column(scale=1):
             with gr.Row():
@@ -520,6 +569,25 @@ def build_tab_history(db_session=None) -> dict:
         show_progress=True,
     )
 
+    update_single_btn.click(
+        fn=on_update_history_post,
+        inputs=[
+            post_selector,
+            title_input,
+            short_desc_input,
+            reg_price_input,
+            sale_price_input,
+            html_editor,
+            post_type_selector,
+            post_status_selector,
+            images_upload,
+            site_filter,
+            status_filter,
+        ],
+        outputs=[action_result_box, history_table, post_selector, images_gallery, post_info_box, images_upload],
+        show_progress=True,
+    )
+
     delete_btn.click(
         fn=on_delete_history_post,
         inputs=[post_selector, site_filter, status_filter],
@@ -546,6 +614,8 @@ def build_tab_history(db_session=None) -> dict:
         "post_status_selector": post_status_selector,
         "save_edits_btn": save_edits_btn,
         "publish_single_btn": publish_single_btn,
+        "update_single_btn": update_single_btn,
+        "sync": sync_comps,
         "delete_btn": delete_btn,
         "preview_output": preview_output,
         "html_editor": html_editor,

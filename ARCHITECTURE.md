@@ -38,6 +38,8 @@ Quy ước khác (không có test, nhưng hãy giữ):
 | Hàng loạt | `tab_bulk.py` | `bulk.py` | CSV/Excel |
 | Kho bài | `tab_history.py` | `posts.py` | đăng lại bài đã lưu dùng chung `core.pipeline.publish_one` |
 | Lịch đăng | `tab_scheduler.py` | `schedules.py` | giờ GMT+7 naive |
+| Đồng bộ WordPress | `sync_panel.py`, `tab_remote.py`, `tab_history.py` (nút Cập nhật) | `sync.py`, `posts.publish_saved_post(update_existing=True)` | đọc không ghi; xóa = thùng rác + xác nhận |
+| Dashboard | `tab_dashboard.py` | `dashboard.py` | kiểm tra kết nối song song, cache 5 phút |
 | Danh mục & tag | `taxonomy_panel.py`, `taxonomy_records.py` | `taxonomy.py` (`TaxControls`), `schedules.py` | UI đổi `TaxControls` → `gr.update` |
 
 ## Thêm một tính năng

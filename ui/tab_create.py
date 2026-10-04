@@ -522,6 +522,8 @@ def build_tab_create(db_session=None) -> dict:
     with gr.Row():
         save_draft_btn = gr.Button("💾 Lưu bài vào hệ thống (Không đăng ngay)", variant="primary", size="lg")
         publish_btn = gr.Button("📤 Đăng lên tất cả các website đã chọn", variant="secondary", size="lg")
+    check_dup_btn = gr.Button("🔍 Kiểm tra bài trùng trên website (chỉ đọc)", size="sm")
+    dup_result = gr.Markdown()
 
     publish_result = gr.Markdown()
 
@@ -633,6 +635,8 @@ def build_tab_create(db_session=None) -> dict:
         'post_status_selector': post_status_selector,
         'save_draft_btn': save_draft_btn,
         'publish_btn': publish_btn,
+        'check_dup_btn': check_dup_btn,
+        'dup_result': dup_result,
         'publish_result': publish_result,
         'schedule_datetime_picker': schedule_datetime_picker,
         'schedule_btn': schedule_btn,

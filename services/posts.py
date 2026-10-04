@@ -63,6 +63,7 @@ class PostDetail:
     tags: list[str]
     created_at: datetime | None
     published_at: datetime | None
+    wp_post_id: str = ""             # rỗng nếu chưa đăng/liên kết với bài WP nào
 
 
 @dataclass(frozen=True)
@@ -77,6 +78,7 @@ class PublishOutcome:
     image_warning: str | None = None
     taxonomy_warning: str | None = None
     category_warning: str | None = None
+    updated: bool = False            # True: đã ghi đè bài WP có sẵn thay vì tạo mới
 
 
 def _image_paths(h) -> list[str]:
@@ -106,6 +108,7 @@ def _detail(h) -> PostDetail:
         tags=[str(t) for t in taxonomy_svc.loads_list(h.tags_json)],
         created_at=h.created_at,
         published_at=h.published_at,
+        wp_post_id=h.wp_post_id or "",
     )
 
 
@@ -193,10 +196,13 @@ def publish_saved_post(
     post_type: str,
     post_status: str,
     new_image_paths: list[str] | None = None,
+    update_existing: bool = False,
 ) -> PublishOutcome:
     """
     Đăng ngay một bài đã lưu. Danh mục/tag lấy từ bài đã lưu; id danh mục chỉ áp dụng khi cùng loại nội dung
     với lúc chọn (xem category_warning). Chỉ ghi DB khi đăng thành công.
+    update_existing=True: GHI ĐÈ bài WP đã liên kết (wp_post_id) bằng PUT thay vì đăng thêm bản mới
+    (raise ServiceError nếu bài chưa có wp_post_id). Ảnh được tải lên lại như khi đăng mới.
     Raise ServiceError (không tìm thấy/thiếu cấu hình) hoặc PublishError (WordPress từ chối/lỗi mạng).
     """
     with session_scope() as db:
@@ -211,6 +217,12 @@ def publish_saved_post(
         image_paths = list(new_image_paths) if new_image_paths else _image_paths(h)
         valid_images = [p for p in image_paths if Path(p).exists()]
 
+        existing_id = None
+        if update_existing:
+            existing_id = (h.wp_post_id or "").strip()
+            if not existing_id:
+                raise ServiceError("Bài này chưa có ID bài WordPress để cập nhật — hãy đăng mới hoặc liên kết với bài có sẵn.")
+
         title = title.strip()
         article = {
             "title": title or h.product_name,
@@ -224,6 +236,7 @@ def publish_saved_post(
         res = pipeline.publish_one(
             h.site.name, site_config, article, valid_images, post_type, post_status,
             regular_price=regular_price.strip(), sale_price=sale_price.strip(),
+            existing_wp_id=existing_id,
         )
         if not res.get("success"):
             raise PublishError(res.get("error") or "Lỗi không xác định")
@@ -253,4 +266,5 @@ def publish_saved_post(
             image_warning=res.get("image_warning"),
             taxonomy_warning=res.get("taxonomy_warning"),
             category_warning=res.get("category_warning"),
+            updated=bool(existing_id),
         )

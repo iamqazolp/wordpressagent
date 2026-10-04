@@ -192,10 +192,12 @@ def publish_product(
     sale_price: str = "",
     short_description: str = "",
     tag_ids: list[int] | None = None,
+    existing_wp_id: int | str | None = None,
 ) -> dict:
     """
     Đăng sản phẩm lên WooCommerce qua REST API (/wp-json/wc/v3/products).
     Sử dụng trực tiếp client_key và client_secret từ .env.
+    Có `existing_wp_id` -> CẬP NHẬT sản phẩm đó (PUT /products/{id}) thay vì tạo mới.
     """
     final_html = _replace_placeholders(html_content, uploaded_images)
 
@@ -241,10 +243,16 @@ def publish_product(
         if images_payload:
             payload["images"] = images_payload
 
-    logger.info(f"Đang tạo sản phẩm WooCommerce tại {base_url} (status={status})...")
+    if existing_wp_id:
+        logger.info(f"Đang CẬP NHẬT sản phẩm WooCommerce #{existing_wp_id} tại {base_url} (status={status})...")
+    else:
+        logger.info(f"Đang tạo sản phẩm WooCommerce tại {base_url} (status={status})...")
 
     try:
-        response = requests.post(endpoint, auth=auth, json=payload, timeout=30)
+        if existing_wp_id:
+            response = requests.put(f"{endpoint}/{existing_wp_id}", auth=auth, json=payload, timeout=30)
+        else:
+            response = requests.post(endpoint, auth=auth, json=payload, timeout=30)
         response.raise_for_status()
     except requests.exceptions.HTTPError as e:
         logger.error(f"Lỗi HTTP khi tạo sản phẩm: {e}\n{response.text[:500]}")
@@ -278,10 +286,12 @@ def publish_post(
     status: str = "draft",
     category_ids: list[int] | None = None,
     tag_ids: list[int] | None = None,
+    existing_wp_id: int | str | None = None,
 ) -> dict:
     """
     Đăng bài viết thông thường (Blog Post) lên WordPress qua REST API (/wp-json/wp/v2/posts).
     Cần WordPress Application Password (WP_USER + WP_APP_PASSWORD).
+    Có `existing_wp_id` -> CẬP NHẬT bài đó (PUT /posts/{id}) thay vì tạo mới.
     """
     final_html = _replace_placeholders(html_content, uploaded_images)
 
@@ -304,15 +314,16 @@ def publish_post(
     if uploaded_images and uploaded_images[0].get('id'):
         payload["featured_media"] = uploaded_images[0]["id"]
 
-    logger.info(f"Đang đăng bài blog lên {base_url} (status={status})...")
+    if existing_wp_id:
+        logger.info(f"Đang CẬP NHẬT bài blog #{existing_wp_id} tại {base_url} (status={status})...")
+    else:
+        logger.info(f"Đang đăng bài blog lên {base_url} (status={status})...")
 
     try:
-        response = requests.post(
-            endpoint,
-            auth=auth,
-            json=payload,
-            timeout=30,
-        )
+        if existing_wp_id:
+            response = requests.put(f"{endpoint}/{existing_wp_id}", auth=auth, json=payload, timeout=30)
+        else:
+            response = requests.post(endpoint, auth=auth, json=payload, timeout=30)
         response.raise_for_status()
     except requests.exceptions.HTTPError as e:
         logger.error(f"Lỗi HTTP khi đăng bài: {e}\n{response.text[:500]}")
@@ -541,3 +552,79 @@ def ensure_tags(site_config: dict, scope: str, names: list[str]) -> list[int]:
         except Exception as e:
             logger.warning(f"Bỏ qua tag '{name}': {e}")
     return ids
+
+
+# ═════════════════════════════════════════════════════════════
+# Đồng bộ: tìm / liệt kê / đọc (chỉ đọc) và đưa vào thùng rác
+# ═════════════════════════════════════════════════════════════
+
+def _items_url_and_auth(site_config: dict, scope: str) -> tuple[str, HTTPBasicAuth]:
+    """product -> wc/v3/products (consumer key); post -> wp/v2/posts (Application Password)."""
+    base = site_config["url"].rstrip("/")
+    if _is_product_scope(scope):
+        return f"{base}/wp-json/wc/v3/products", HTTPBasicAuth(site_config["client_key"], site_config["client_secret"])
+    return f"{base}/wp-json/wp/v2/posts", _get_wp_auth(site_config)
+
+
+def _normalize_item(raw: dict, scope: str) -> dict:
+    """Đưa sản phẩm WC / bài WP về cùng một dạng: {id, title, status, url, modified, type}."""
+    if _is_product_scope(scope):
+        title = raw.get("name", "")
+        url = raw.get("permalink", "")
+        modified = raw.get("date_modified", "")
+    else:
+        t = raw.get("title")
+        title = t.get("rendered", "") if isinstance(t, dict) else (t or "")
+        url = raw.get("link", "")
+        modified = raw.get("modified", "")
+    return {
+        "id": raw.get("id"),
+        "title": _html_unescape(title),
+        "status": raw.get("status", ""),
+        "url": url,
+        "modified": modified or "",
+        "type": "product" if _is_product_scope(scope) else "post",
+    }
+
+
+def list_items(
+    site_config: dict, scope: str, page: int = 1, per_page: int = 20, status: str = "any", search: str = ""
+) -> tuple[list[dict], int]:
+    """
+    CHỈ ĐỌC. Liệt kê sản phẩm/bài đang có trên website. Trả (items, tổng_số).
+    RAISE khi lỗi mạng/HTTP để nơi gọi báo lỗi thay vì hiểu nhầm là website trống.
+    """
+    url, auth = _items_url_and_auth(site_config, scope)
+    params: dict = {"per_page": per_page, "page": page, "status": status, "orderby": "date", "order": "desc"}
+    if search:
+        params["search"] = search
+    response = requests.get(url, auth=auth, params=params, timeout=20)
+    response.raise_for_status()
+    batch = response.json()
+    if not isinstance(batch, list):
+        raise ValueError(f"Phản hồi danh sách không hợp lệ: {str(batch)[:200]}")
+    total = int(response.headers.get("X-WP-Total") or len(batch))
+    return [_normalize_item(b, scope) for b in batch], total
+
+
+def get_item(site_config: dict, scope: str, wp_id: int | str) -> dict | None:
+    """CHỈ ĐỌC. Lấy 1 sản phẩm/bài theo id; None nếu không còn (404). Lỗi khác thì raise."""
+    url, auth = _items_url_and_auth(site_config, scope)
+    response = requests.get(f"{url}/{wp_id}", auth=auth, timeout=20)
+    if response.status_code == 404:
+        return None
+    response.raise_for_status()
+    return _normalize_item(response.json(), scope)
+
+
+def trash_item(site_config: dict, scope: str, wp_id: int | str) -> dict:
+    """
+    Đưa 1 sản phẩm/bài vào THÙNG RÁC của WordPress (khôi phục được trong wp-admin).
+    Cố ý KHÔNG có tham số `force`: module này không bao giờ xóa vĩnh viễn.
+    """
+    url, auth = _items_url_and_auth(site_config, scope)
+    response = requests.delete(f"{url}/{wp_id}", auth=auth, params={"force": "false"}, timeout=30)
+    response.raise_for_status()
+    item = _normalize_item(response.json(), scope)
+    item["status"] = item["status"] or "trash"
+    return item

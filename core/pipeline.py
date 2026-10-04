@@ -106,9 +106,11 @@ def publish_one(
     sale_price: str = "",
     optimize_images: bool = True,
     remove_bg: bool = False,
+    existing_wp_id: int | str | None = None,
 ) -> dict:
     """
     Đăng MỘT bài lên MỘT website: tải ảnh -> tra category/tag -> tạo sản phẩm/bài viết.
+    Có `existing_wp_id` -> cập nhật bài đó trên WordPress (PUT) thay vì tạo mới.
     Không raise: lỗi đăng trả về {'success': False, 'error': ...}. Lỗi ảnh/tag chỉ là cảnh báo.
     Kết quả thành công có thêm: uploaded_count, category_warning (id danh mục đã chọn nhưng bị bỏ do
     khác loại nội dung), image_warning, taxonomy_warning.
@@ -166,6 +168,7 @@ def publish_one(
                 short_description=short_desc,
                 category_ids=category_ids,
                 tag_ids=tag_ids,
+                existing_wp_id=existing_wp_id,
             )
         else:
             if not site_config.get('wp_user'):
@@ -176,6 +179,7 @@ def publish_one(
                 status=post_status,
                 category_ids=category_ids,
                 tag_ids=tag_ids,
+                existing_wp_id=existing_wp_id,
             )
         return {
             'site_name': site_name, 'success': True,

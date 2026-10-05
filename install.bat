@@ -7,18 +7,18 @@ set PYTHONUTF8=1
 set "PY="
 where py >nul 2>nul
 if %errorlevel%==0 (
-  py -3 -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" >nul 2>nul
+  py -3 -c "import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)" >nul 2>nul
   if not errorlevel 1 set "PY=py -3"
 )
 if not defined PY (
   where python >nul 2>nul
   if %errorlevel%==0 (
-    python -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" >nul 2>nul
+    python -c "import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)" >nul 2>nul
     if not errorlevel 1 set "PY=python"
   )
 )
 if not defined PY (
-  echo [X] Chua co Python 3.10 tro len. Tai tai https://www.python.org/downloads/
+  echo [X] Chua co Python 3.11 tro len. Tai tai https://www.python.org/downloads/
   echo     Khi cai nho tick o "Add python.exe to PATH", sau do chay lai install.bat
   pause
   exit /b 1

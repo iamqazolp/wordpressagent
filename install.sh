@@ -4,13 +4,13 @@ set -e
 cd "$(dirname "$0")"
 
 PY=""
-for c in python3.12 python3.11 python3.10 python3; do
-  if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)'; then
+for c in python3.12 python3.11 python3; do
+  if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)'; then
     PY="$c"; break
   fi
 done
 if [ -z "$PY" ]; then
-  echo "✗ Chưa có Python 3.10 trở lên. Cài từ https://www.python.org/downloads/ rồi chạy lại ./install.sh"
+  echo "✗ Chưa có Python 3.11 trở lên. Cài từ https://www.python.org/downloads/ rồi chạy lại ./install.sh"
   exit 1
 fi
 echo "✓ Dùng $($PY --version)"

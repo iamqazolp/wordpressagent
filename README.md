@@ -21,7 +21,7 @@ Công cụ chạy ngay trên máy của bạn: nhập tên sản phẩm → AI v
 
 ## 🚀 Cài đặt (làm một lần)
 
-**Cần:** Python **3.10 trở lên** (khuyến nghị 3.12) — tải tại <https://www.python.org/downloads/> (trên Windows nhớ tick **"Add python.exe to PATH"**) và kết nối Internet.
+**Cần:** Python **3.11 trở lên** (khuyến nghị 3.12) — tải tại <https://www.python.org/downloads/> (trên Windows nhớ tick **"Add python.exe to PATH"**) và kết nối Internet.
 
 1. Giải nén gói `wordpress-agent-x.y.z.zip` vào một thư mục cố định (ví dụ `C:\WordPressAgent` hoặc `~/WordPressAgent`).
 2. Chạy file cài đặt:
@@ -118,7 +118,7 @@ Dữ liệu của bạn nằm ở: thư mục `data/` (cơ sở dữ liệu, log
 
 | Hiện tượng | Cách xử lý |
 |---|---|
-| `install` báo không có Python | Cài Python 3.10+ (tick *Add to PATH* trên Windows) rồi chạy lại |
+| `install` báo không có Python | Cài Python 3.11+ (tick *Add to PATH* trên Windows) rồi chạy lại |
 | Mở app báo chưa cấu hình `GEMINI_API_KEY` | Điền khoá vào `.env`, tắt và chạy lại |
 | Kiểm tra kết nối báo lỗi WC/WP | Kiểm tra URL (có `https://`), khoá WooCommerce quyền Đọc/Ghi, Application Password; website phải bật REST API |
 | Không tải được ảnh | Cần điền **WP Username + Application Password** của website |

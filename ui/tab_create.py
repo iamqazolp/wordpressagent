@@ -478,7 +478,7 @@ def build_tab_create(db_session=None) -> dict:
 
             seo_panel = gr.HTML(value=EMPTY_SEO_PANEL, label="Điểm SEO")
 
-            with gr.Accordion("Danh mục & tag", open=False):
+            with gr.Accordion("Danh mục & tag", open=True):
                 category_dropdown = gr.Dropdown(
                     label="Danh mục", choices=[], value=[], multiselect=True, interactive=True,
                 )

@@ -10,7 +10,7 @@
 ![Platform](https://img.shields.io/badge/Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
 <!-- ẢNH BÌA: dán ảnh chụp giao diện chính (khuyến nghị 1600x900, PNG) vào docs/images/hero.png -->
-<img src="docs/images/hero.png" alt="WordPress Agent" width="880">
+<img src="docs/images/hero.jpeg" alt="WordPress Agent" width="880">
 
 </div>
 
@@ -43,16 +43,15 @@ Dữ liệu và khoá API nằm trên máy của bạn, không qua máy chủ tr
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/create.png" alt="Tạo bài"><br><sub><b>Tạo bài:</b> nhập sản phẩm, xem trước từng website, đăng hoặc hẹn giờ.</sub></td>
-    <td width="50%"><img src="docs/images/bulk.png" alt="Tạo hàng loạt"><br><sub><b>Tạo hàng loạt:</b> nhập file, chọn bài để đăng hoặc hẹn giờ.</sub></td>
+    <td width="50%"><img src="docs/images/create.jpeg" alt="Tạo bài"><br><sub><b>Tạo bài:</b> nhập sản phẩm, xem trước từng website, đăng hoặc hẹn giờ.</sub></td>
+    <td width="50%"><img src="docs/images/bulk.jpeg" alt="Tạo hàng loạt"><br><sub><b>Tạo hàng loạt:</b> nhập file, chọn bài để đăng hoặc hẹn giờ.</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/images/store.png" alt="Kho bài viết"><br><sub><b>Kho bài viết:</b> sửa, đăng, cập nhật, thao tác nhiều bài.</sub></td>
-    <td width="50%"><img src="docs/images/schedule.png" alt="Lịch đăng"><br><sub><b>Lịch đăng:</b> theo dõi, huỷ, xoá, sửa danh mục của lịch chờ.</sub></td>
+    <td width="50%"><img src="docs/images/store.jpeg" alt="Kho bài viết"><br><sub><b>Kho bài viết:</b> sửa, đăng, cập nhật, thao tác nhiều bài.</sub></td>
+    <td width="50%"><img src="docs/images/schedule.jpeg" alt="Lịch đăng"><br><sub><b>Lịch đăng:</b> theo dõi, huỷ, xoá, sửa danh mục của lịch chờ.</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/images/dashboard.png" alt="Dashboard"><br><sub><b>Dashboard:</b> tổng quan và tình trạng website.</sub></td>
-    <td width="50%"><img src="docs/images/launcher.png" alt="Cửa sổ khởi động"><br><sub><b>Cửa sổ khởi động:</b> cài đặt, chạy, dừng, sao lưu.</sub></td>
+    <td width="50%"><img src="docs/images/dashboard.jpeg" alt="Dashboard"><br><sub><b>Dashboard:</b> tổng quan và tình trạng website.</sub></td>
   </tr>
 </table>
 

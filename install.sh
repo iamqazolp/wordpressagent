@@ -15,16 +15,20 @@ if [ -z "$PY" ]; then
 fi
 echo "✓ Dùng $($PY --version)"
 
+# Tạo .env NGAY (trước khi cài thư viện) để dù bước cài có lỗi, file vẫn có sẵn cho người dùng điền.
+STATE=$("$PY" tools/init_env.py || true)
+
 [ -d .venv ] || "$PY" -m venv .venv
 .venv/bin/python -m pip install --upgrade pip -q
 echo "⏳ Đang cài thư viện (vài phút ở lần đầu)..."
 .venv/bin/python -m pip install -r requirements.txt
 
-STATE=$(.venv/bin/python tools/init_env.py || true)
 echo
 echo "✓ Cài đặt xong."
 if [ "$STATE" = "CREATED" ]; then
-  echo "👉 Mở file .env và điền GEMINI_API_KEY (bắt buộc), rồi chạy ./run.sh"
+  echo "👉 Mở file .env (file ẩn vì tên bắt đầu bằng dấu chấm) và điền GEMINI_API_KEY (bắt buộc), rồi chạy ./run.sh"
+  echo "   Đường dẫn: $(pwd)/.env   (Finder: bấm Cmd+Shift+. để hiện file ẩn)"
+  if [ "$(uname)" = "Darwin" ]; then open -e .env 2>/dev/null || true; fi
 else
   echo "👉 Chạy ./run.sh để mở ứng dụng."
 fi

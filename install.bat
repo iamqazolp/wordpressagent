@@ -25,16 +25,20 @@ if not defined PY (
 )
 echo [OK] Da tim thay Python.
 
-if not exist ".venv\Scripts\python.exe" %PY% -m venv .venv
-if errorlevel 1 ( echo [X] Khong tao duoc moi truong ao. & pause & exit /b 1 )
+rem Tao .env NGAY (truoc khi cai thu vien) de du buoc cai co loi, file van co san.
+%PY% tools\init_env.py >nul
+set "ENVRC=%errorlevel%"
+
+if not exist ".venv\Scripts\python.exe" (
+  %PY% -m venv .venv
+  if errorlevel 1 ( echo [X] Khong tao duoc moi truong ao. & pause & exit /b 1 )
+)
 
 ".venv\Scripts\python.exe" -m pip install --upgrade pip -q
 echo Dang cai thu vien (vai phut o lan dau)...
 ".venv\Scripts\python.exe" -m pip install -r requirements.txt
 if errorlevel 1 ( echo [X] Cai thu vien that bai. Kiem tra ket noi mang roi chay lai. & pause & exit /b 1 )
 
-".venv\Scripts\python.exe" tools\init_env.py >nul
-set "ENVRC=%errorlevel%"
 echo.
 echo [OK] Cai dat xong.
 if "%ENVRC%"=="10" (

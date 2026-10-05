@@ -168,6 +168,22 @@ def write_post(
     return title, html_content
 
 
+def write_short_description(product_name: str, article_html: str, note: str) -> str:
+    """Viết mô tả ngắn (HTML) cho sản phẩm theo ghi chú của người dùng, dựa trên nội dung bài đã có."""
+    context = re.sub(r"<[^>]+>", " ", article_html or "")
+    context = re.sub(r"\s+", " ", context).strip()[:4000].replace("{", "(").replace("}", ")")
+    prompt = (
+        f"Viết MÔ TẢ NGẮN (HTML đơn giản: <p>, <ul>, <li>, <strong>) cho sản phẩm '{product_name}'.\n"
+        f"Yêu cầu của người dùng: {note.strip()}\n\n"
+        f"Nội dung bài đầy đủ để tham khảo (giữ đúng thông số, không bịa):\n{context}\n\n"
+        "Chỉ trả về HTML, không giải thích, không bọc trong code block."
+    )
+    response = _call_gemini(_get_client(), settings.GEMINI_MODEL, prompt, 0.4)
+    html = re.sub(r"^```html?\s*", "", response.text.strip(), flags=re.IGNORECASE)
+    html = re.sub(r"\s*```$", "", html).strip()
+    return nh3.clean(html, tags=_ALLOWED_TAGS, attributes=_ALLOWED_ATTRS)
+
+
 def _generate_title(product_name: str, html_content: str) -> str:
     """Tạo tên sản phẩm chuẩn phong cách WooCommerce như web mẫu."""
     # Thử lấy từ 'Tổng quan về ...' trong H3

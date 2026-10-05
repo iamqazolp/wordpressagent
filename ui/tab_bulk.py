@@ -119,82 +119,44 @@ def run_bulk_generate_and_publish(
 
 def build_tab_bulk() -> dict:
     """Dựng giao diện cho tab Tạo & Đăng Hàng Loạt qua CSV."""
-    gr.Markdown("""
-    <div style="margin-bottom: 15px;">
-        <h3>📦 Tạo & Đăng Bài Hàng Loạt Từ File CSV / Excel</h3>
-        <p style="color: #666;">Nhập danh sách sản phẩm qua file CSV hoặc Excel (.xlsx, .xls) để tự động tìm kiếm, tạo bài viết độc bản và đăng lên hàng loạt website.</p>
-    </div>
-    """)
-
-    with gr.Row():
-        with gr.Column(scale=1):
+    with gr.Row(equal_height=False):
+        with gr.Column(scale=1, min_width=360):
             file_input = gr.File(
-                label="📁 Tải lên file CSV / Excel sản phẩm",
+                label="File CSV / Excel",
                 file_types=[".csv", ".xlsx", ".xls"],
                 file_count="single",
+                height=110,
             )
-            gr.Markdown("""
-            **📋 Cấu trúc các cột trong file CSV / Excel (hỗ trợ tiếng Việt hoặc tiếng Anh):**
-            - `product_name` hoặc `Tên sản phẩm` *(bắt buộc)*: Tên sản phẩm
-            - `ref_urls` hoặc `URL tham khảo` *(tùy chọn)*: URL tham khảo (phân cách bằng dấu `;`)
-            - `notes` hoặc `Ghi chú AI` *(tùy chọn)*: Ghi chú, yêu cầu riêng cho AI
-            - `regular_price` hoặc `Giá gốc` *(tùy chọn)*: Giá gốc (VNĐ)
-            - `sale_price` hoặc `Giá khuyến mại` *(tùy chọn)*: Giá khuyến mại (VNĐ)
-            """)
-            parse_btn = gr.Button("📑 Đọc & Kiểm tra File (CSV / Excel)", variant="secondary")
+            gr.Markdown(
+                "Cột: `product_name` (bắt buộc), `ref_urls` (cách nhau bằng `;`), `notes`, `regular_price`, `sale_price`.",
+            )
+            parse_btn = gr.Button("Đọc file", size="sm")
+            sites_selector = gr.CheckboxGroup(label="Website", choices=load_sites(), value=load_sites())
+            with gr.Row():
+                template_selector = gr.Dropdown(
+                    label="Mẫu prompt", choices=load_templates(), value="(Mặc định)", scale=2,
+                )
+                randomize_chk = gr.Checkbox(label="Mỗi site một bản riêng", value=True, scale=1)
+            post_type_radio = gr.Radio(
+                choices=["Sản phẩm WooCommerce", "Bài viết Blog"], value="Sản phẩm WooCommerce", visible=False,
+            )
+            post_status_radio = gr.Radio(label="Khi đăng", choices=["draft", "publish"], value="draft")
+            with gr.Row():
+                gen_btn = gr.Button("Chỉ tạo bài", variant="secondary")
+                gen_pub_btn = gr.Button("Tạo và đăng", variant="primary")
+            status_area = gr.Markdown("")
 
-        with gr.Column(scale=2):
+        with gr.Column(scale=2, min_width=420):
             parse_status = gr.Markdown("Chưa tải file.")
-            preview_df = gr.Dataframe(
-                label="Bảng dữ liệu sản phẩm đọc được từ file",
+            preview_df = gr.Dataframe(label="Dữ liệu đọc được", interactive=False, wrap=True, max_height=260)
+            parsed_state = gr.State([])
+            results_df = gr.Dataframe(
+                label="Kết quả",
+                headers=["STT", "Tên sản phẩm", "Trạng thái", "Website", "Link WP", "Chi tiết / Lỗi"],
                 interactive=False,
                 wrap=True,
+                max_height=300,
             )
-            parsed_state = gr.State([])
-
-    gr.Markdown("---")
-    gr.Markdown("### ⚙️ Cấu hình đăng bài hàng loạt")
-
-    with gr.Row():
-        with gr.Column():
-            sites_selector = gr.CheckboxGroup(
-                label="🌐 Chọn các website áp dụng",
-                choices=load_sites(),
-                value=load_sites(),
-            )
-            template_selector = gr.Dropdown(
-                label="📄 Mẫu Prompt (Template)",
-                choices=load_templates(),
-                value="(Mặc định)",
-            )
-            randomize_chk = gr.Checkbox(
-                label="🎲 Bật Randomize (Nội dung độc bản cho từng website)",
-                value=True,
-            )
-
-        with gr.Column():
-            post_type_radio = gr.Radio(
-                label="Loại nội dung đăng",
-                choices=["Sản phẩm WooCommerce", "Bài viết Blog"],
-                value="Sản phẩm WooCommerce",
-            )
-            post_status_radio = gr.Radio(
-                label="Trạng thái khi đăng",
-                choices=["draft", "publish"],
-                value="draft",
-            )
-
-    with gr.Row():
-        gen_btn = gr.Button("🚀 1. Chỉ tạo bài hàng loạt (không đăng)", variant="secondary", size="lg")
-        gen_pub_btn = gr.Button("⚡ 2. Tạo & Đăng lên Website ngay", variant="primary", size="lg")
-
-    status_area = gr.Markdown("")
-    results_df = gr.Dataframe(
-        label="📊 Kết quả thực hiện",
-        headers=["STT", "Tên sản phẩm", "Trạng thái", "Website", "Link WP", "Chi tiết / Lỗi"],
-        interactive=False,
-        wrap=True,
-    )
     results_state = gr.State([])
 
     # WIRING SỰ KIỆN NỘI BỘ TAB

@@ -20,7 +20,7 @@ from ui.seo_panel import EMPTY_PANEL as EMPTY_SEO_PANEL
 
 logger = logging.getLogger(__name__)
 
-def run_pipeline_ui(product_name, image_files, extra_urls_text, user_notes_text, selected_sites, randomize_enabled, template_choice, progress=gr.Progress()):
+def run_pipeline_ui(product_name, image_files, extra_urls_text, user_notes_text, selected_sites, randomize_enabled, template_choice, short_desc_note="", progress=gr.Progress()):
     """
     Wrapper that calls services.generation.generate_for_sites().
     Returns: (preview_dropdown, title, short_description, preview_html, articles_state, current_site, status_msg)
@@ -37,6 +37,7 @@ def run_pipeline_ui(product_name, image_files, extra_urls_text, user_notes_text,
             randomize=randomize_enabled,
             template_name=template_choice,
             progress=lambda val, desc: progress(val, desc=desc),
+            short_desc_note=short_desc_note or "",
         )
 
         # Bản xem trước (đường dẫn ảnh kiểu Gradio) chỉ là chuyện hiển thị nên làm ở lớp UI
@@ -53,7 +54,10 @@ def run_pipeline_ui(product_name, image_files, extra_urls_text, user_notes_text,
             interactive=True,
         )
 
-        status_msg = f"✅ Đã tạo xong nội dung cho {len(selected_sites)} website! Bạn có thể chọn từng website ở ô bên dưới để xem trước hoặc chỉnh sửa trước khi đăng."
+        status_msg = f"✅ Đã tạo bài cho {len(selected_sites)} website."
+        warns = sorted({a["short_desc_warning"] for a in articles.values() if a.get("short_desc_warning")})
+        if warns:
+            status_msg += "\n⚠️ " + " ".join(warns)
 
         return (
             updated_dropdown,
@@ -161,12 +165,8 @@ def save_draft_articles_ui(
 
     gr.Info(f"✅ Đã lưu {res.saved_count} bài viết vào hệ thống!")
     return (
-        f"### 💾 Đã lưu thành công {res.saved_count} bài viết vào hệ thống!\n\n"
-        f"- **Trạng thái:** `Đã lưu nháp trên Web` (chưa đẩy lên WordPress/WooCommerce).\n"
-        f"- **Hình ảnh:** Đã lưu {res.image_count} ảnh gốc "
-        f"(nén WebP / watermark sẽ áp dụng lúc đăng, có thể bật/tắt ở tab Kho bài viết).\n"
-        f"- **Bước tiếp theo:** Bạn có thể qua tab **📚 Kho Bài Viết & Lịch Sử** để xem lại danh sách, "
-        f"chỉnh sửa bài viết hoặc bấm nút đăng lên website bất cứ khi nào bạn muốn."
+        f"### 💾 Đã lưu {res.saved_count} bài vào kho\n\n"
+        f"Chưa đăng lên WordPress. {res.image_count} ảnh gốc đã lưu; nén và watermark áp dụng khi đăng."
     )
 
 
@@ -302,13 +302,12 @@ def schedule_post_ui(
     weekday_names = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"]
     weekday = weekday_names[res.scheduled_time.weekday()]
     return (
-        f"### ⏰ Đặt Lịch Đăng Thành Công!\n"
-        f"- **Mã lịch hẹn (Job ID):** `#{res.job_id}`\n"
+        f"### ⏰ Đã đặt lịch\n"
+        f"- **Mã lịch:** `#{res.job_id}`\n"
         f"- **Sản phẩm:** {res.product_name}\n"
         f"- **Thời gian đăng dự kiến:** `{res.scheduled_time.strftime('%H:%M')} ({TZ_LABEL}) - {weekday}, ngày {res.scheduled_time.strftime('%d/%m/%Y')}`\n"
         f"- **Áp dụng cho:** {len(res.site_names)} website ({', '.join(res.site_names)})\n"
-        f"- **Trạng thái:** Sẽ tự động đăng dưới dạng `{res.post_status}`\n\n"
-        f"👉 *Bạn có thể theo dõi tiến độ hoặc hủy lịch bất kỳ lúc nào tại tab **📅 Lịch Đăng Bài**.*"
+        f"- **Đăng dưới dạng:** `{res.post_status}`"
     )
 
 
@@ -382,193 +381,122 @@ def build_tab_create(db_session=None) -> dict:
     site_names = site_service.list_site_names()
     template_choices = [template_service.DEFAULT_CHOICE] + template_service.list_template_names()
 
-    with gr.Row():
-        with gr.Column(scale=1):
+    with gr.Row(equal_height=False):
+        with gr.Column(scale=5, min_width=420):
             product_input = gr.Textbox(
-                label="🏷️ Tên sản phẩm",
-                placeholder="VD: Pa lăng cáp điện 1T x 12M, máy cắt góc JL...",
+                label="Tên sản phẩm",
+                placeholder="VD: Pa lăng cáp điện 1T x 12M",
             )
-            image_input = gr.File(
-                label="🖼️ Upload ảnh sản phẩm",
-                file_count="multiple",
-                file_types=["image"],
-            )
+            image_input = gr.File(label="Ảnh sản phẩm", file_count="multiple", file_types=["image"], height=110)
 
-            with gr.Accordion("🖼️ Tùy Chọn Tối Ưu Hình Ảnh (Phase 3)", open=False):
-                img_optimize_chk = gr.Checkbox(
-                    label="⚡ Chuẩn hóa & Nén WebP (max 1200px, giảm 60-80% dung lượng)",
-                    value=True,
-                )
-                img_watermark_chk = gr.Checkbox(
-                    label="🏷️ Tự động đóng dấu Watermark logo website",
-                    value=True,
-                    info="Lấy logo và vị trí đã cấu hình ở tab Quản Lý Website.",
-                )
-                img_remove_bg_chk = gr.Checkbox(
-                    label="✨ Tách nền sản phẩm (Xóa phông rembg)",
-                    value=False,
-                    info="Chạy local trên máy (yêu cầu cài đặt rembg).",
-                )
-                btn_preview_images = gr.Button("👁️ Xử lý thử & Xem trước ảnh đã tối ưu", variant="secondary", size="sm")
+            with gr.Accordion("Xử lý ảnh", open=False):
+                with gr.Row():
+                    img_optimize_chk = gr.Checkbox(label="Nén WebP", value=True)
+                    img_watermark_chk = gr.Checkbox(label="Watermark", value=True)
+                    img_remove_bg_chk = gr.Checkbox(label="Tách nền", value=False)
+                btn_preview_images = gr.Button("Xem thử ảnh đã xử lý", size="sm")
                 processed_images_gallery = gr.Gallery(
-                    label="Xem trước ảnh sau khi tối ưu & đóng watermark",
-                    columns=4,
-                    rows=1,
-                    height=130,
-                    interactive=False,
+                    label="Ảnh sau xử lý", columns=4, rows=1, height=130, interactive=False,
                 )
                 img_process_summary = gr.Markdown("")
-            extra_urls_input = gr.Textbox(
-                label="🔗 URL tham khảo thêm (tùy chọn)",
-                placeholder="Mỗi URL một dòng\nhttps://example.com/bai-viet-1",
-                lines=2,
-            )
-            user_notes_input = gr.Textbox(
-                label="💡 Mô tả / Thông số kỹ thuật / Gợi ý riêng cho AI (Tùy chọn)",
-                placeholder="VD: Dán thông số kỹ thuật, mô tả chi tiết từ nhà cung cấp, hoặc ghi chú riêng (lõi đồng 100%, bảo hành 24 tháng...)",
-                lines=3,
-            )
-            
-            template_selector = gr.Dropdown(
-                label="📄 Chọn mẫu Prompt (Template)",
-                choices=template_choices,
-                value="(Mặc định)",
-            )
 
-            sites_selector = gr.CheckboxGroup(
-                label="🌐 Chọn các website đăng bài (chọn nhiều)",
-                choices=site_names,
-                value=site_names,
-            )
-
-            randomize_checkbox = gr.Checkbox(
-                label="🎲 Bật Randomize (Mỗi website một phiên bản riêng - Tránh phạt SEO)",
-                value=True,
-                info="Nếu bật: Mỗi website sẽ có tiêu đề, lời mở đầu và hành văn độc bản.",
-            )
-
-            create_btn = gr.Button("🚀 Tạo bài viết cho các website đã chọn", variant="primary", size="lg")
-
-        with gr.Column(scale=2):
-            status_box = gr.Textbox(label="📋 Trạng thái tạo bài", lines=5, interactive=False)
-
-            with gr.Group():
-                gr.Markdown("### 👁️ Xem trước nội dung theo từng website")
-                preview_site_selector = gr.Dropdown(
-                    label="Chọn website để xem bài viết tương ứng:",
-                    choices=site_names,
-                    value=site_names[0] if site_names else None,
-                    interactive=True,
+            with gr.Accordion("Thông tin thêm cho AI", open=False):
+                extra_urls_input = gr.Textbox(
+                    label="URL tham khảo", placeholder="Mỗi URL một dòng", lines=2,
                 )
-                title_output = gr.Textbox(
-                    label="📝 Tiêu đề sản phẩm cho website này (có thể chỉnh sửa)",
-                    lines=1,
-                    interactive=True,
+                user_notes_input = gr.Textbox(
+                    label="Thông số / ghi chú cho AI",
+                    placeholder="VD: lõi đồng 100%, bảo hành 24 tháng",
+                    lines=3,
                 )
-                
-                short_desc_editor = gr.Code(
-                    label="📑 Mô tả ngắn sản phẩm (HTML - mặc định tự động lấy bảng thông số)",
-                    language="html",
-                    lines=4,
-                    interactive=True,
+            short_desc_note = gr.Textbox(
+                label="Ghi chú mô tả ngắn",
+                placeholder="Để trống = lấy bảng thông số",
+                lines=1,
+            )
+
+            with gr.Row():
+                template_selector = gr.Dropdown(
+                    label="Mẫu prompt", choices=template_choices, value="(Mặc định)", scale=2,
                 )
+                randomize_checkbox = gr.Checkbox(label="Mỗi site một bản riêng", value=True, scale=1)
 
-                seo_panel = gr.HTML(value=EMPTY_SEO_PANEL, label="Điểm SEO")
+            sites_selector = gr.CheckboxGroup(label="Website", choices=site_names, value=site_names)
 
-                with gr.Group():
-                    gr.Markdown("**🏷️ Danh mục & Tag cho website đang xem** *(mỗi website có danh mục riêng)*")
-                    category_dropdown = gr.Dropdown(
-                        label="Danh mục (Category)",
-                        choices=[],
-                        value=[],
-                        multiselect=True,
-                        interactive=True,
-                        info="Tối đa nên chọn 1–2 danh mục. Danh sách lấy từ website (bấm 🔄 nếu thiếu).",
-                    )
-                    tags_input = gr.Textbox(
-                        label="Tag (cách nhau bằng dấu phẩy)",
-                        placeholder="VD: quạt công nghiệp, quạt hút xưởng",
-                        lines=1,
-                        info="Tag chưa có trên website sẽ được tạo tự động khi đăng.",
-                    )
-                    with gr.Row():
-                        btn_ai_taxonomy = gr.Button("🤖 AI gợi ý danh mục & tag", size="sm")
-                        btn_sync_categories = gr.Button("🔄 Làm mới danh mục", size="sm")
-                    taxonomy_status = gr.Markdown(value="ℹ️ Tạo bài viết trước để chọn danh mục và tag.")
+            create_btn = gr.Button("Tạo bài viết", variant="primary")
 
+            with gr.Row():
+                regular_price_input = gr.Textbox(label="Giá gốc", placeholder="5500000", lines=1)
+                sale_price_input = gr.Textbox(label="Giá khuyến mại", placeholder="Để trống nếu không giảm", lines=1)
+
+            post_type_selector = gr.Radio(
+                choices=["Sản phẩm WooCommerce", "Bài viết Blog"], value="Sản phẩm WooCommerce", visible=False,
+            )
+            post_status_selector = gr.Radio(
+                label="Khi đăng", choices=["draft", "publish"], value="draft",
+            )
+            with gr.Row():
+                save_draft_btn = gr.Button("Lưu vào kho", variant="secondary")
+                publish_btn = gr.Button("Đăng lên các website", variant="primary")
+            check_dup_btn = gr.Button("Kiểm tra bài trùng", size="sm")
+            dup_result = gr.Markdown()
+            publish_result = gr.Markdown()
+
+            with gr.Accordion("Hẹn giờ đăng", open=False):
                 with gr.Row():
-                    toggle_edit_btn = gr.Button("🔄 Chuyển đổi chế độ (Xem / Chỉnh sửa HTML)")
-                
-                edit_mode_state = gr.State(False)
-                
-                preview_output = gr.HTML(label="Nội dung bài viết", visible=True)
-                
-                html_editor = gr.Code(label="Chỉnh sửa mã HTML", language="html", visible=False, interactive=True)
-                save_html_btn = gr.Button("💾 Lưu mã HTML đã sửa", visible=False)
+                    btn_quick_30m = gr.Button("+30 phút", size="sm")
+                    btn_quick_1h = gr.Button("+1 giờ", size="sm")
+                    btn_quick_2h = gr.Button("+2 giờ", size="sm")
+                with gr.Row():
+                    btn_quick_tomorrow_8am = gr.Button("Mai 08:00", size="sm")
+                    btn_quick_tomorrow_14pm = gr.Button("Mai 14:00", size="sm")
+                    btn_quick_tomorrow_20pm = gr.Button("Mai 20:00", size="sm")
+                default_init_time = now_vn() + timedelta(hours=1)
+                schedule_datetime_picker = gr.DateTime(
+                    label=f"Ngày giờ đăng ({TZ_LABEL})",
+                    type="datetime",
+                    timezone=TZ_NAME,
+                    value=default_init_time,
+                    include_time=True,
+                )
+                schedule_time_preview = gr.Markdown(value=format_time_preview(default_init_time))
+                schedule_btn = gr.Button("Đặt lịch", variant="primary")
+                schedule_result = gr.Markdown()
 
-    with gr.Row():
-        regular_price_input = gr.Textbox(
-            label="💵 Giá gốc (Regular Price - VNĐ)",
-            placeholder="VD: 5500000 hoặc 5.500.000",
-            lines=1,
-        )
-        sale_price_input = gr.Textbox(
-            label="🏷️ Giá khuyến mại (Sale Price - VNĐ, tùy chọn)",
-            placeholder="VD: 4900000 hoặc 4.900.000 (để trống nếu không giảm)",
-            lines=1,
-        )
+        with gr.Column(scale=6, min_width=420):
+            status_box = gr.Textbox(label="Trạng thái", lines=1, max_lines=3, interactive=False)
 
-    with gr.Row():
-        post_type_selector = gr.Radio(
-            label="Loại nội dung đăng",
-            choices=["Sản phẩm WooCommerce", "Bài viết Blog"],
-            value="Sản phẩm WooCommerce",
-            info="Đăng bài hoặc sản phẩm (lưu ý: để tải ảnh lên website, cần có Application Password ở tab Quản Lý Website)",
-        )
-        post_status_selector = gr.Radio(
-            label="Trạng thái khi đăng",
-            choices=["draft", "publish"],
-            value="draft",
-            info="'draft' = lưu nháp (khuyến nghị), 'publish' = công khai ngay",
-        )
-    with gr.Row():
-        save_draft_btn = gr.Button("💾 Lưu bài vào hệ thống (Không đăng ngay)", variant="primary", size="lg")
-        publish_btn = gr.Button("📤 Đăng lên tất cả các website đã chọn", variant="secondary", size="lg")
-    check_dup_btn = gr.Button("🔍 Kiểm tra bài trùng trên website (chỉ đọc)", size="sm")
-    dup_result = gr.Markdown()
-
-    publish_result = gr.Markdown()
-
-    with gr.Accordion("⏰ Lên lịch hẹn giờ đăng tự động (Post Scheduler)", open=False):
-        gr.Markdown(
-            "Hẹn giờ đăng bài tự động mà không cần treo máy hoặc đăng ngay lập tức. "
-            "Bạn có thể chọn nhanh các mốc thời gian phổ biến hoặc chọn trực tiếp ngày & giờ trên giao diện lịch."
-        )
-        gr.Markdown("**⚡ Chọn nhanh mốc thời gian:**")
-        with gr.Row():
-            btn_quick_30m = gr.Button("⚡ +30 phút", size="sm")
-            btn_quick_1h = gr.Button("⚡ +1 giờ", size="sm")
-            btn_quick_2h = gr.Button("⚡ +2 giờ", size="sm")
-            btn_quick_tomorrow_8am = gr.Button("🌅 Sáng mai (08:00)", size="sm")
-            btn_quick_tomorrow_14pm = gr.Button("☀️ Chiều mai (14:00)", size="sm")
-            btn_quick_tomorrow_20pm = gr.Button("🌙 Tối mai (20:00)", size="sm")
-
-        with gr.Row():
-            default_init_time = now_vn() + timedelta(hours=1)
-            schedule_datetime_picker = gr.DateTime(
-                label=f"📅 Chọn ngày & giờ đăng bài ({TZ_LABEL} · Giờ Việt Nam)",
-                type="datetime",
-                timezone=TZ_NAME,
-                value=default_init_time,
-                include_time=True,
+            preview_site_selector = gr.Dropdown(
+                label="Xem bài của website",
+                choices=site_names,
+                value=site_names[0] if site_names else None,
+                interactive=True,
             )
+            title_output = gr.Textbox(label="Tiêu đề", lines=1, interactive=True)
+            # Mô tả ngắn không còn hiển thị để sửa tay; giữ component ẩn cho luồng state hiện có
+            short_desc_editor = gr.Code(language="html", visible=False, interactive=True)
 
-        schedule_time_preview = gr.Markdown(
-            value=format_time_preview(default_init_time)
-        )
+            seo_panel = gr.HTML(value=EMPTY_SEO_PANEL, label="Điểm SEO")
 
-        schedule_btn = gr.Button("⏰ Xác nhận Lên Lịch Đăng", variant="primary", size="lg")
-        schedule_result = gr.Markdown()
+            with gr.Accordion("Danh mục & tag", open=False):
+                category_dropdown = gr.Dropdown(
+                    label="Danh mục", choices=[], value=[], multiselect=True, interactive=True,
+                )
+                tags_input = gr.Textbox(
+                    label="Tag (cách nhau bằng dấu phẩy)", placeholder="quạt công nghiệp, quạt hút xưởng", lines=1,
+                )
+                with gr.Row():
+                    btn_ai_taxonomy = gr.Button("AI gợi ý", size="sm")
+                    btn_sync_categories = gr.Button("Làm mới danh mục", size="sm")
+                taxonomy_status = gr.Markdown(value="")
+
+            with gr.Row():
+                toggle_edit_btn = gr.Button("Xem / sửa HTML", size="sm")
+                save_html_btn = gr.Button("Lưu HTML", size="sm", visible=False)
+            edit_mode_state = gr.State(False)
+
+            preview_output = gr.HTML(label="Nội dung bài", visible=True, max_height=520)
+            html_editor = gr.Code(label="Mã HTML", language="html", visible=False, interactive=True)
 
     # Sự kiện chọn nhanh lịch hẹn & tương tác DateTime picker
     btn_quick_30m.click(
@@ -622,6 +550,7 @@ def build_tab_create(db_session=None) -> dict:
         'image_input': image_input,
         'extra_urls_input': extra_urls_input,
         'user_notes_input': user_notes_input,
+        'short_desc_note': short_desc_note,
         'template_selector': template_selector,
         'sites_selector': sites_selector,
         'randomize_checkbox': randomize_checkbox,

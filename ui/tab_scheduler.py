@@ -67,15 +67,8 @@ def handle_delete_job(job_id_input: str) -> tuple[pd.DataFrame, str]:
 
 def build_tab_scheduler() -> dict:
     """Dựng giao diện cho tab Quản Lý Lịch Đăng."""
-    gr.Markdown("""
-    <div style="margin-bottom: 15px;">
-        <h3>📅 Quản Lý Lịch Đăng Bài Tự Động (Post Scheduler)</h3>
-        <p style="color: #666;">Theo dõi các bài viết được hẹn giờ đăng tự động. Hệ thống sẽ tự động đăng đúng giờ ngay cả khi bạn không tương tác với trình duyệt.</p>
-    </div>
-    """)
-
     with gr.Row():
-        refresh_btn = gr.Button("🔄 Làm mới danh sách", variant="secondary")
+        refresh_btn = gr.Button("Làm mới", variant="secondary")
 
     jobs_table = gr.Dataframe(
         value=fetch_scheduler_data,

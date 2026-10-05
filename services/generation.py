@@ -7,13 +7,16 @@ rồi bổ sung các trường mà luồng đăng/lưu cần (product_name, shor
 """
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Callable
 
-from core import pipeline
+from core import ai_writer, pipeline
 from services import sites as site_service
 from services import templates as template_service
 from services.errors import ServiceError
+
+logger = logging.getLogger(__name__)
 
 Progress = Callable[[float, str], None]
 
@@ -35,6 +38,7 @@ def generate_for_sites(
     randomize: bool = False,
     template_name: str | None = None,
     progress: Progress | None = None,
+    short_desc_note: str = "",
 ) -> dict[str, dict]:
     """
     Tạo bài cho các website được chọn. Raise ServiceError khi thiếu dữ liệu hoặc không tạo được bài nào;
@@ -61,7 +65,15 @@ def generate_for_sites(
     if not articles:
         raise ServiceError("Không tạo được bài viết nào.")
 
+    note = (short_desc_note or "").strip()
     for art in articles.values():
         art["product_name"] = product_name
-        art["short_description"] = extract_short_description(art.get("raw_html", ""))
+        table = extract_short_description(art.get("raw_html", ""))
+        art["short_description"] = table
+        if note:
+            try:
+                art["short_description"] = ai_writer.write_short_description(product_name, art.get("raw_html", ""), note) or table
+            except Exception as e:
+                logger.warning(f"Không viết được mô tả ngắn theo ghi chú, dùng bảng thông số: {e}")
+                art["short_desc_warning"] = "Không viết được mô tả ngắn theo ghi chú, đã dùng bảng thông số."
     return articles

@@ -93,7 +93,7 @@ def build_tab_templates() -> dict:
                 value="general",
                 interactive=True
             )
-            input_is_default = gr.Checkbox(label="Là Mặc định (Sẽ ghi đè Mặc định hiện tại)", value=False)
+            input_is_default = gr.Checkbox(label="Đặt làm mặc định", value=False)
             
             btn_save = gr.Button("Lưu", variant="primary")
             btn_delete = gr.Button("Xóa", variant="stop")
@@ -104,12 +104,7 @@ def build_tab_templates() -> dict:
             input_content = gr.Code(label="Nội dung Template", language="markdown", lines=25)
             
             gr.Markdown(
-                "### 📌 Biến có thể sử dụng trong Template:\n"
-                "- `{product_name}` — Tên sản phẩm\n"
-                "- `{site_name}` — Tên website\n"
-                "- `{reference_articles}` — Nội dung tham khảo từ web\n"
-                "- `{image_count}` — Số lượng ảnh sản phẩm\n"
-                "- `{user_notes}` — Gợi ý riêng từ người dùng"
+                "Biến: `{product_name}` `{site_name}` `{reference_articles}` `{image_count}` `{user_notes}`"
             )
             
     template_selector.change(

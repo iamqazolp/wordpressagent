@@ -49,44 +49,43 @@ def create_app() -> gr.Blocks:
 
         gr.HTML("""
         <div style="text-align:center;padding:15px 0 10px;">
-            <h1 style="font-size:2em;margin:0;color:#1381f0;">🌟 WordPress Agent</h1>
-            <p style="color:#666;margin:5px 0 0;">Quản lý đa website • Tự động viết & đăng sản phẩm • Chống trùng lặp SEO • Lên lịch tự động</p>
-        </div>
+            <h1 style="font-size:2em;margin:0;color:#1381f0;">WordPress Agent</h1>
+                    </div>
         """)
 
         build_app_control()
 
         with gr.Tabs():
             # Tab 0: Dashboard (tab đầu tiên)
-            with gr.TabItem("📊 Dashboard"):
+            with gr.TabItem("Dashboard"):
                 dashboard_comps = build_tab_dashboard()
 
             # Tab 1: Tạo & Đăng Bài đơn lẻ
-            with gr.TabItem("✍️ Tạo & Đăng Bài"):
+            with gr.TabItem("Tạo bài"):
                 create_comps = build_tab_create()
 
             # Tab 2: Tạo & Đăng Hàng Loạt (CSV / Excel)
-            with gr.TabItem("📦 Tạo Hàng Loạt"):
+            with gr.TabItem("Hàng loạt"):
                 bulk_comps = build_tab_bulk()
 
             # Tab 3: Lịch Đăng Bài (Scheduler)
-            with gr.TabItem("📅 Lịch Đăng Bài"):
+            with gr.TabItem("Lịch đăng"):
                 scheduler_comps = build_tab_scheduler()
 
             # Tab 4: Kho bài viết & Lịch sử
-            with gr.TabItem("📚 Kho Bài Viết & Lịch Sử") as tab_history_item:
+            with gr.TabItem("Kho bài viết") as tab_history_item:
                 history_comps = build_tab_history()
 
             # Tab 4b: Xem sản phẩm/bài đang có trên WordPress (chỉ đọc)
-            with gr.TabItem("🌐 Trên WordPress") as tab_remote_item:
+            with gr.TabItem("Trên WordPress") as tab_remote_item:
                 remote_comps = build_tab_remote()
 
             # Tab 5: Quản lý Template
-            with gr.TabItem("📝 Quản Lý Template"):
+            with gr.TabItem("Template"):
                 templates_comps = build_tab_templates()
 
             # Tab 6: Quản Lý Website
-            with gr.TabItem("⚙️ Quản Lý Website"):
+            with gr.TabItem("Website"):
                 sites_comps = build_tab_sites()
 
         # =====================================================================
@@ -120,6 +119,7 @@ def create_app() -> gr.Blocks:
                 create_comps['sites_selector'],
                 create_comps['randomize_checkbox'],
                 create_comps['template_selector'],
+                create_comps['short_desc_note'],
             ],
             outputs=[
                 create_comps['preview_site_selector'],

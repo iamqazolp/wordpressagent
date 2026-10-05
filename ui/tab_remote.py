@@ -54,11 +54,6 @@ def refresh_sites():
 
 
 def build_tab_remote() -> dict:
-    gr.Markdown(
-        "### 🌐 Sản phẩm / bài đang có trên WordPress\n"
-        "Chỉ **xem** (không ghi, không xóa). Dùng cột **WP ID** để liên kết với bài trong Kho bài viết, "
-        "hoặc tìm bài trùng trước khi đăng."
-    )
     names = site_service.list_site_names()
     with gr.Row():
         site = gr.Dropdown(label="Website", choices=names, value=names[0] if names else None, scale=2)

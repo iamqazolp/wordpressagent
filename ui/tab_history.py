@@ -384,27 +384,20 @@ def build_tab_history(db_session=None) -> dict:
         else ("", "", "", "", "Sản phẩm WooCommerce", "draft", "", "", "*(Chưa có bài viết nào trong kho)*", None, None)
     )
 
-    gr.Markdown("""
-    <div style="margin-bottom: 15px;">
-        <h3>📚 Kho Bài Viết & Lịch Sử Đăng</h3>
-        <p style="color: #666;">Quản lý toàn bộ bài viết đã lưu trên web và lịch sử đăng lên WordPress/WooCommerce. Bạn có thể xem lại hình ảnh, chỉnh sửa hoặc đăng bất kỳ bài nào bất cứ lúc nào.</p>
-    </div>
-    """)
-
     with gr.Row():
         site_filter = gr.Dropdown(
-            label="🌐 Lọc theo website",
+            label="Website",
             choices=filter_choices,
             value="Tất cả",
             scale=1,
         )
         status_filter = gr.Dropdown(
-            label="📌 Lọc theo trạng thái",
+            label="Trạng thái",
             choices=["Tất cả", "💾 Đã lưu nháp", "📝 Nháp WP", "✅ Đã đăng", "❌ Lỗi"],
             value="Tất cả",
             scale=1,
         )
-        refresh_btn = gr.Button("🔄 Làm mới dữ liệu", scale=1)
+        refresh_btn = gr.Button("Làm mới", scale=1)
 
     history_table = gr.Dataframe(
         value=fetch_history_data("Tất cả", "Tất cả"),
@@ -413,12 +406,10 @@ def build_tab_history(db_session=None) -> dict:
         wrap=True,
     )
 
-    gr.Markdown("---")
-    gr.Markdown("### 🔍 Chi Tiết & Thao Tác Với Bài Viết Đã Lưu")
 
     with gr.Row():
         post_selector = gr.Dropdown(
-            label="👉 Chọn bài viết để xem chi tiết / chỉnh sửa / đăng bài (hoặc click vào 1 dòng trong bảng trên):",
+            label="Bài viết (hoặc bấm một dòng trong bảng)",
             choices=initial_choices,
             value=first_choice if first_choice else (initial_choices[0] if initial_choices else None),
             interactive=True,
@@ -428,21 +419,17 @@ def build_tab_history(db_session=None) -> dict:
 
     with gr.Row():
         with gr.Column(scale=1):
-            title_input = gr.Textbox(label="📝 Tiêu đề sản phẩm", value=init_title, lines=1, interactive=True)
-            short_desc_input = gr.Code(label="📑 Mô tả ngắn (HTML)", value=init_short_desc, language="html", lines=4, interactive=True)
+            title_input = gr.Textbox(label="Tiêu đề", value=init_title, lines=1, interactive=True)
+            with gr.Accordion("Mô tả ngắn (HTML)", open=False):
+                short_desc_input = gr.Code(label="HTML", value=init_short_desc, language="html", lines=4, interactive=True)
             
             with gr.Row():
-                reg_price_input = gr.Textbox(label="💵 Giá gốc (VNĐ)", value=init_reg_price, lines=1, interactive=True)
-                sale_price_input = gr.Textbox(label="🏷️ Giá KM (VNĐ)", value=init_sale_price, lines=1, interactive=True)
+                reg_price_input = gr.Textbox(label="Giá gốc", value=init_reg_price, lines=1, interactive=True)
+                sale_price_input = gr.Textbox(label="Giá khuyến mại", value=init_sale_price, lines=1, interactive=True)
 
             # Phần hình ảnh của bài viết
-            gr.Markdown("#### 🖼️ Quản Lý Hình Ảnh Sản Phẩm")
-            gr.Markdown(
-                "*Bấm vào ảnh để xem lớn, bấm ✕ trên ảnh để xoá khỏi bài. Ảnh đứng đầu là ảnh đại diện. "
-                "Nhớ bấm **Lưu** hoặc **Đăng/Cập nhật** để áp dụng.*"
-            )
             images_gallery = gr.Gallery(
-                label="Album ảnh của bài viết",
+                label="Ảnh (bấm ✕ để xoá, ảnh đầu là ảnh đại diện)",
                 value=init_images,
                 columns=4,
                 rows=1,
@@ -451,46 +438,32 @@ def build_tab_history(db_session=None) -> dict:
                 interactive=True,
             )
             images_upload = gr.File(
-                label="📁 Thêm ảnh mới vào album (không thay thế ảnh đang có)",
+                label="Thêm ảnh",
                 file_count="multiple",
                 file_types=["image"],
                 interactive=True,
             )
-            with gr.Accordion("🏷️ Xử lý ảnh khi đăng (nén WebP / Watermark)", open=True):
-                opt_img_chk = gr.Checkbox(
-                    label="⚡ Chuẩn hóa & nén WebP (max 1200px)", value=True,
-                )
-                watermark_chk = gr.Checkbox(
-                    label="🏷️ Đóng watermark logo của website",
-                    value=True,
-                    info="Bỏ chọn để đăng ảnh KHÔNG có watermark. Đổi logo/vị trí ở tab Quản Lý Website, áp dụng cho lần đăng sau.",
-                )
-                remove_bg_chk = gr.Checkbox(
-                    label="✨ Tách nền sản phẩm (rembg)", value=False,
-                )
+            with gr.Accordion("Xử lý ảnh khi đăng", open=False):
+                with gr.Row():
+                    opt_img_chk = gr.Checkbox(label="Nén WebP", value=True)
+                    watermark_chk = gr.Checkbox(label="Watermark", value=True)
+                    remove_bg_chk = gr.Checkbox(label="Tách nền", value=False)
 
             with gr.Row():
                 post_type_selector = gr.Radio(
-                    label="Loại nội dung",
-                    choices=["Sản phẩm WooCommerce", "Bài viết Blog"],
-                    value=init_post_type,
+                    choices=["Sản phẩm WooCommerce", "Bài viết Blog"], value=init_post_type, visible=False,
                 )
-                post_status_selector = gr.Radio(
-                    label="Trạng thái khi đăng",
-                    choices=["draft", "publish"],
-                    value=init_post_status,
-                    info="'draft' = lưu nháp WP, 'publish' = công khai ngay",
-                )
+                post_status_selector = gr.Radio(label="Khi đăng", choices=["draft", "publish"], value=init_post_status)
 
             tax = tr.build_taxonomy_widgets(
-                "**🏷️ Danh mục & Tag của bài này** *(lưu ngay khi chọn; dùng khi bấm Đăng bài lên Website)*"
+                "**Danh mục & tag**"
             )
 
             with gr.Row():
-                save_edits_btn = gr.Button("💾 Lưu thay đổi nội dung", variant="secondary")
-                publish_single_btn = gr.Button("🚀 Đăng bài này lên Website ngay", variant="primary", size="lg")
-                update_single_btn = gr.Button("⬆️ Cập nhật bài WP đã có (ghi đè)", variant="secondary")
-                delete_btn = gr.Button("🗑️ Xóa bài này", variant="stop")
+                save_edits_btn = gr.Button("Lưu", variant="secondary")
+                publish_single_btn = gr.Button("Đăng lên website", variant="primary")
+                update_single_btn = gr.Button("Cập nhật bài WP", variant="secondary")
+                delete_btn = gr.Button("Xoá", variant="stop")
 
             action_result_box = gr.Markdown("")
 
@@ -498,7 +471,7 @@ def build_tab_history(db_session=None) -> dict:
 
         with gr.Column(scale=1):
             with gr.Row():
-                toggle_history_edit_btn = gr.Button("🔄 Chuyển đổi (Xem / Sửa HTML)")
+                toggle_history_edit_btn = gr.Button("Xem / sửa HTML", size="sm")
             history_edit_mode = gr.State(False)
 
             preview_output = gr.HTML(label="Xem trước bài viết", value=init_preview_html, visible=True)

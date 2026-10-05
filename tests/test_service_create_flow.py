@@ -85,7 +85,7 @@ def test_ui_run_pipeline_messages(world, fake_ai):
     assert rest[-1] == "❌ Vui lòng nhập tên sản phẩm!" and rest[3] == {}
     out = tab_create.run_pipeline_ui("Quạt", None, "http://a\n\n http://b ", "", ["shop"], False, "T1")
     drop, title, short, preview, state, site, msg = out
-    assert title == "T-shop" and site == "shop" and msg.startswith("✅ Đã tạo xong nội dung cho 1 website")
+    assert title == "T-shop" and site == "shop" and msg.startswith("✅ Đã tạo bài cho 1 website")
     assert state["shop"]["preview_html"] == preview and fake_ai["extra_urls"] == ["http://a", "http://b"]
 
 
@@ -149,7 +149,7 @@ def test_ui_publish_report_and_save_messages(world, fake_wp):
     assert msg.startswith("### 📋 Kết Quả Đăng Bài:") and "**shop**: ✅ Thành công (📝 Nháp)" in msg
     assert tab_create.save_draft_articles_ui({}, None, "product").startswith("❌ Chưa có nội dung")
     msg = tab_create.save_draft_articles_ui(_articles(), None, "product")
-    assert msg.startswith("### 💾 Đã lưu thành công 2 bài viết")
+    assert msg.startswith("### 💾 Đã lưu 2 bài vào kho")
 
 
 def test_ui_preview_processed_images_without_files():
@@ -252,3 +252,28 @@ def test_ui_bulk_contract(world, fake_ai, fake_wp, tmp_path):
     table, msg = tab_bulk.run_bulk_generate_and_publish(state, ["shop"], "(Mặc định)", False, "product", "draft")
     assert table.iloc[0]["Trạng thái"] == "✅ Đăng thành công (draft)" and msg == "🎉 Hoàn tất quá trình tạo và đăng cho 1 sản phẩm!"
     assert tab_bulk.load_sites() == ["shop", "blog"] and tab_bulk.load_templates()[0] == "(Mặc định)"
+
+
+def test_short_description_note(world, fake_ai, monkeypatch):
+    from core import ai_writer
+
+    calls = []
+    monkeypatch.setattr(ai_writer, "write_short_description", lambda name, html, note: calls.append(note) or "<p>AI</p>")
+    arts = generation.generate_for_sites("Quạt", ["shop"])
+    assert arts["shop"]["short_description"].startswith("<table") and calls == []
+
+    arts = generation.generate_for_sites("Quạt", ["shop"], short_desc_note="  3 gạch đầu dòng ")
+    assert arts["shop"]["short_description"] == "<p>AI</p>" and calls == ["3 gạch đầu dòng"]
+
+
+def test_short_description_note_falls_back_to_table(world, fake_ai, monkeypatch):
+    from core import ai_writer
+
+    def boom(*a):
+        raise RuntimeError("quota")
+
+    monkeypatch.setattr(ai_writer, "write_short_description", boom)
+    arts = generation.generate_for_sites("Quạt", ["shop"], short_desc_note="ngắn")
+    assert arts["shop"]["short_description"].startswith("<table") and arts["shop"]["short_desc_warning"]
+    *_, msg = tab_create.run_pipeline_ui("Quạt", None, "", "", ["shop"], False, "(Mặc định)", "ngắn")
+    assert "⚠️" in msg

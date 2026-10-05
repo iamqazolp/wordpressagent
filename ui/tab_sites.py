@@ -172,15 +172,14 @@ def build_tab_sites(db_session=None) -> dict:
     """Build the site management tab. Returns components dict."""
     site_names = site_service.list_site_names()
 
-    gr.Markdown("### 🌐 Danh Sách Các Website Đang Kết Nối")
+    gr.Markdown("### Website")
     sites_table_view = gr.Markdown(value=get_sites_table_md())
 
     gr.Markdown("---")
-    gr.Markdown("### 🛠️ Thêm Mới / Chỉnh Sửa / Xóa Website")
 
     dropdown_init_choices = ["➕ Thêm website mới"] + site_names
     site_select_edit = gr.Dropdown(
-        label="Chọn website cần sửa/xóa (hoặc chọn '➕ Thêm website mới'):",
+        label="Sửa / xoá website",
         choices=dropdown_init_choices,
         value="➕ Thêm website mới",
         interactive=True,
@@ -209,29 +208,29 @@ def build_tab_sites(db_session=None) -> dict:
 
     with gr.Row():
         input_wp_user = gr.Textbox(
-            label="WordPress Username (Tùy chọn - để đăng Blog/upload ảnh)",
+            label="WordPress Username",
             placeholder="admin",
         )
         input_wp_pass = gr.Textbox(
-            label="WordPress Application Password (Tùy chọn)",
+            label="Application Password (cần để tải ảnh lên)",
             placeholder="xxxx xxxx xxxx xxxx",
             type="password",
         )
 
     # PHẦN WATERMARK LOGO
-    gr.Markdown("#### 🏷️ Cấu Hình Watermark / Logo Thương Hiệu Cho Website (Phase 3)")
+    gr.Markdown("#### Watermark")
     with gr.Row():
         with gr.Column(scale=1):
             input_watermark_file = gr.File(
-                label="Tải lên file Logo thương hiệu (PNG / WebP trong suốt)",
+                label="Logo (PNG / WebP nền trong)",
                 file_types=["image"],
                 type="filepath",
             )
-            btn_clear_watermark = gr.Button("🗑️ Xóa logo watermark hiện tại", variant="secondary", size="sm")
+            btn_clear_watermark = gr.Button("Xoá logo", variant="secondary", size="sm")
 
         with gr.Column(scale=1):
             input_watermark_pos = gr.Dropdown(
-                label="Vị trí đóng dấu Watermark trên ảnh",
+                label="Vị trí",
                 choices=[
                     ("Góc dưới phải (Mặc định)", "bottom-right"),
                     ("Góc dưới trái", "bottom-left"),
@@ -242,12 +241,11 @@ def build_tab_sites(db_session=None) -> dict:
                 value="bottom-right",
             )
             input_watermark_opacity = gr.Slider(
-                label="Độ mờ Logo (Opacity)",
+                label="Độ mờ",
                 minimum=0.1,
                 maximum=1.0,
                 value=0.7,
                 step=0.05,
-                info="0.7 = mờ 70% (vừa vặn không che sản phẩm)",
             )
             current_watermark_preview = gr.Image(
                 label="Logo hiện có của website",

@@ -125,6 +125,7 @@ def publish_one(
     image_paths = image_paths or []
     if image_paths:
         if site_config.get('wp_user') and site_config.get('wp_app_password'):
+            upload_errors: list[str] = []
             try:
                 uploaded = wp_client.upload_images(
                     image_paths,
@@ -132,17 +133,13 @@ def publish_one(
                     optimize=optimize_images,
                     remove_bg=remove_bg,
                     apply_watermark=apply_watermark,
+                    errors=upload_errors,
                 )
+                reasons = "; ".join(upload_errors[:3]) or "xem log để biết chi tiết"
                 if not uploaded:
-                    image_warning = (
-                        "Tải ảnh thất bại (xem log để biết chi tiết, có thể do tên file, "
-                        "dung lượng hoặc quyền WordPress Application Password)."
-                    )
+                    image_warning = f"Tải ảnh thất bại: {reasons}"
                 elif len(uploaded) < len(image_paths):
-                    image_warning = (
-                        f"Chỉ tải được {len(uploaded)}/{len(image_paths)} ảnh lên WordPress "
-                        "(xem log để biết chi tiết)."
-                    )
+                    image_warning = f"Chỉ tải được {len(uploaded)}/{len(image_paths)} ảnh lên WordPress: {reasons}"
             except Exception as e:
                 logger.warning(f'Upload ảnh thất bại tại {site_name}: {e}')
                 image_warning = f"Lỗi upload ảnh: {e}"

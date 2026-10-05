@@ -31,12 +31,33 @@ def ascii_filename(name: str) -> str:
     return f"{stem}{ext}"
 
 
+def describe_upload_error(response) -> str:
+    """Giải thích lỗi upload ảnh bằng tiếng Việt, kèm mã HTTP và đoạn phản hồi của WordPress."""
+    code = response.status_code
+    hints = {
+        401: "sai Username/Application Password (tạo lại ở WP Admin → Users → Profile → Application Passwords)",
+        403: "tài khoản không có quyền tải ảnh, hoặc plugin bảo mật/hosting đang chặn REST API",
+        404: "không tìm thấy /wp-json (kiểm tra URL site, hoặc permalink đang là 'Plain')",
+        413: "ảnh quá nặng so với giới hạn upload của hosting",
+        415: "WordPress không nhận định dạng ảnh này",
+        500: "lỗi phía WordPress/hosting (thường do thiếu RAM hoặc thư mục uploads không ghi được)",
+    }
+    detail = ""
+    try:
+        detail = str(response.json().get("message", ""))[:150]
+    except Exception:
+        detail = (response.text or "")[:100].strip()
+    hint = hints.get(code, "")
+    return f"HTTP {code}" + (f" – {hint}" if hint else "") + (f" [{detail}]" if detail else "")
+
+
 def upload_images(
     image_paths: list[str],
     site_config: dict,
     optimize: bool = True,
     remove_bg: bool = False,
     apply_watermark: bool = True,
+    errors: list[str] | None = None,
 ) -> list[dict]:
     """
     Upload nhiều ảnh lên WordPress Media Library (Tự động tối ưu WebP & Watermark ở Phase 3).
@@ -54,6 +75,7 @@ def upload_images(
         - url:      URL công khai của ảnh sau khi upload
         - filename: Tên file gốc
     """
+    errors = errors if errors is not None else []
     base_url = site_config["url"].rstrip("/")
     # Ưu tiên Application Password để upload media
     wp_user = site_config.get("wp_user", "")
@@ -135,9 +157,11 @@ def upload_images(
                     f"✗ Lỗi upload {path.name}: "
                     f"HTTP {response.status_code} - {response.text[:200]}"
                 )
+                errors.append(f"{path.name}: {describe_upload_error(response)}")
 
         except Exception as e:
             logger.error(f"✗ Lỗi upload {path.name}: {e}")
+            errors.append(f"{path.name}: {type(e).__name__}: {str(e)[:150]}")
 
     return uploaded
 

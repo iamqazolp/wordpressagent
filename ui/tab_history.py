@@ -12,6 +12,7 @@ from services.errors import PublishError, ServiceError
 from ui import taxonomy_records as tr
 from ui.common import extract_file_paths, extract_id_from_choice, merge_image_selection
 from ui.preview import make_preview_html
+from ui import batch as batch_ui
 from ui.sync_panel import build_history_sync
 
 logger = logging.getLogger(__name__)
@@ -404,8 +405,15 @@ def build_tab_history(db_session=None) -> dict:
         headers=["ID", "Sản phẩm", "Tiêu đề", "Website", "Loại", "Trạng thái", "Ảnh", "Giá gốc", "Giá KM", "Danh mục / Tag", "Ngày tạo (GMT+7)", "Link WP"],
         interactive=False,
         wrap=True,
+        max_height=420,
     )
 
+    with gr.Accordion("Chọn nhiều bài: đăng / hẹn giờ / xoá", open=False) as multi_box:
+        multi_pick = gr.CheckboxGroup(label="Chọn bài", choices=[], value=[])
+        with gr.Row():
+            multi_all_btn = gr.Button("Chọn tất cả", size="sm")
+            multi_none_btn = gr.Button("Bỏ chọn", size="sm")
+        multi = batch_ui.build_batch_controls()
 
     with gr.Row():
         post_selector = gr.Dropdown(
@@ -497,6 +505,31 @@ def build_tab_history(db_session=None) -> dict:
         images_gallery,
         images_upload,
     ]
+
+    def _multi_choices(site_f, status_f):
+        choices = [c for c in get_history_post_choices(site_f, status_f) if c.startswith("#")]
+        return gr.update(choices=choices, value=[])
+
+    _multi_args = dict(fn=_multi_choices, inputs=[site_filter, status_filter], outputs=[multi_pick])
+    multi_box.expand(**_multi_args)
+    site_filter.change(**_multi_args)
+    status_filter.change(**_multi_args)
+    refresh_btn.click(**_multi_args)
+    multi_all_btn.click(
+        fn=lambda s_f, st_f: gr.update(value=[c for c in get_history_post_choices(s_f, st_f) if c.startswith("#")]),
+        inputs=[site_filter, status_filter], outputs=[multi_pick],
+    )
+    multi_none_btn.click(fn=lambda: gr.update(value=[]), outputs=[multi_pick])
+
+    def _after_batch(site_f, status_f):
+        df = fetch_history_data(site_f, status_f)
+        choices = get_history_post_choices(site_f, status_f)
+        return df, gr.update(choices=choices, value=choices[0] if choices else None), _multi_choices(site_f, status_f)
+
+    batch_ui.wire_batch(
+        multi, multi_pick, then_fn=_after_batch, then_inputs=[site_filter, status_filter],
+        then_outputs=[history_table, post_selector, multi_pick],
+    )
 
     site_filter.change(
         fn=_on_filter_change,

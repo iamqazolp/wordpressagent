@@ -355,3 +355,16 @@ def schedule_saved_batch(
         except ServiceError as e:
             out.append(BatchItem(d.id, d.product_name, d.site_name, False, e.message))
     return out
+
+
+def delete_posts_batch(post_ids: list[int]) -> list[BatchItem]:
+    """Xoá các bản ghi trong kho (không động tới bài đã đăng trên WordPress)."""
+    out: list[BatchItem] = []
+    for pid in post_ids:
+        d = get_post(pid)
+        try:
+            delete_post(pid)
+            out.append(BatchItem(pid, d.product_name if d else "?", d.site_name if d else "?", True))
+        except ServiceError as e:
+            out.append(BatchItem(pid, d.product_name if d else "?", d.site_name if d else "?", False, e.message))
+    return out

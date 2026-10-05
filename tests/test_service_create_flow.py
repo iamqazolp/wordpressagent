@@ -7,7 +7,7 @@ from core import pipeline, wp_client
 from db import crud
 from services import bulk, generation, images, publishing
 from services.errors import ServiceError
-from ui import tab_bulk, tab_create
+from ui import batch, tab_bulk, tab_create
 
 
 @pytest.fixture
@@ -292,19 +292,19 @@ def test_bulk_process_batch_publish_and_schedule(world, fake_ai, fake_wp, monkey
     assert "Kho bài #" in table.iloc[0]["Chi tiết / Lỗi"]
 
     # đăng ngay hai bài đã chọn
-    msg = tab_bulk.process_batch(choices[:2], "Đăng ngay", "draft", None, 0, 0)
+    msg = batch.process_batch(choices[:2], "Đăng ngay", "draft", None, 0, 0)
     assert msg.startswith("**Đã đăng 2/2 bài.**")
-    assert {posts.get_post(i).status for i in tab_bulk._ids_from(choices[:2])} == {"draft"}
+    assert {posts.get_post(i).status for i in batch.ids_from(choices[:2])} == {"draft"}
 
     # hẹn giờ: mỗi (bài, site) một lịch, giờ lệch theo khoảng cách
     jobs = []
     monkeypatch.setattr(core_scheduler, "schedule_publish_job", lambda **kw: jobs.append(kw) or len(jobs))
     start = now_vn() + timedelta(hours=1)
-    msg = tab_bulk.process_batch(choices[1:3], "Hẹn giờ", "publish", start, 30, 5)
+    msg = batch.process_batch(choices[1:3], "Hẹn giờ", "publish", start, 30, 5)
     assert msg.startswith("**Đã hẹn giờ 2/2 bài.**") and len(jobs) == 2
     assert jobs[1]["scheduled_time"] - jobs[0]["scheduled_time"] == timedelta(minutes=30)
     assert all(next(iter(j["articles"].values()))["history_id"] for j in jobs)
-    assert tab_bulk.process_batch([], "Đăng ngay", "draft", None, 0, 0).startswith("❌")
+    assert batch.process_batch([], "Đăng ngay", "draft", None, 0, 0).startswith("❌")
 
 
 def test_schedule_per_site_creates_one_job_per_site(world, monkeypatch):
@@ -351,3 +351,35 @@ def test_scheduled_job_updates_saved_history_row(world, fake_wp, monkeypatch):
     after = posts.get_post(pid)
     assert after.status == "draft" and after.wp_post_url.startswith("https://x/?p=")
     assert len(posts.list_posts()) == 1       # không sinh bản ghi trùng
+
+
+def test_batch_delete_requires_confirmation(world, fake_ai):
+    from services import posts
+
+    results, _, _ = tab_bulk.run_bulk_generate([{"product_name": "A"}], ["shop", "blog"], "(Mặc định)", False)
+    choices = tab_bulk._batch_choices(results)
+    assert batch.process_batch(choices, "Xoá", "draft", None, 0, 0).startswith("❌ Tick ô xác nhận")
+    assert len(posts.list_posts()) == 2
+    msg = batch.process_batch(choices[:1], "Xoá", "draft", None, 0, 0, True)
+    assert msg.startswith("**Đã xoá 1/1") and len(posts.list_posts()) == 1
+
+
+def test_scheduler_batch_cancel_and_delete(world, monkeypatch):
+    from datetime import timedelta
+    from core import scheduler as core_scheduler
+    from core.timeutil import now_vn
+    from db import database
+    from services import schedules
+    from ui import tab_scheduler
+
+    monkeypatch.setattr(core_scheduler, "SessionLocal", database.SessionLocal)
+    t = now_vn() + timedelta(hours=2)
+    ids = [schedules.schedule_post({"shop": {"title": "T", "product_name": f"P{i}", "raw_html": "<p>x</p>"}},
+                                   [], "draft", "product", t).job_id for i in range(3)]
+    picks = tab_scheduler._job_choices()
+    assert len(picks) == 3
+    df, msg, _ = tab_scheduler.handle_batch_jobs(picks[:2], "Huỷ lịch")
+    assert msg == "✅ Đã huỷ 2/2 lịch." and (df["Trạng thái"] == "🚫 Đã hủy").sum() == 2
+    assert tab_scheduler.handle_batch_jobs(picks, "Xoá")[1].startswith("❌ Tick")
+    df, msg, _ = tab_scheduler.handle_batch_jobs(picks, "Xoá", True)
+    assert msg == "✅ Đã xoá 3/3 lịch." and len(df) == 0

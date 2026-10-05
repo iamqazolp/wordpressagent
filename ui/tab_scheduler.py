@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import pandas as pd
 import gradio as gr
 
@@ -65,6 +66,27 @@ def handle_delete_job(job_id_input: str) -> tuple[pd.DataFrame, str]:
     return fetch_scheduler_data(), f"❌ Không tìm thấy lịch đăng #{job_id} để xóa."
 
 
+def _job_choices() -> list[str]:
+    try:
+        return [f"#{j.id} · {j.product_name} · {j.sites} · {j.status}" for j in sched_svc.list_jobs(limit=100)]
+    except Exception:
+        logger.exception("Lỗi khi tải danh sách lịch đăng")
+        return []
+
+
+def handle_batch_jobs(picked, action: str, confirm: bool = False) -> tuple:
+    """Huỷ hoặc xoá nhiều lịch đăng đã chọn. Trả (bảng, thông báo, ô chọn cập nhật)."""
+    ids = [int(m.group(1)) for c in (picked or []) if (m := re.match(r"#(\d+)", c))]
+    if not ids:
+        return fetch_scheduler_data(), "❌ Chưa chọn lịch nào.", gr.update()
+    if action == "Xoá" and not confirm:
+        return fetch_scheduler_data(), "❌ Tick ô xác nhận để xoá.", gr.update()
+    fn = sched_svc.delete_job if action == "Xoá" else sched_svc.cancel_job
+    done = sum(1 for i in ids if fn(i))
+    verb = "xoá" if action == "Xoá" else "huỷ"
+    return fetch_scheduler_data(), f"✅ Đã {verb} {done}/{len(ids)} lịch.", gr.update(choices=_job_choices(), value=[])
+
+
 def build_tab_scheduler() -> dict:
     """Dựng giao diện cho tab Quản Lý Lịch Đăng."""
     with gr.Row():
@@ -85,6 +107,19 @@ def build_tab_scheduler() -> dict:
                 delete_btn = gr.Button("Xoá khỏi danh sách", variant="secondary")
         with gr.Column(scale=2):
             action_status = gr.Markdown("")
+
+    with gr.Accordion("Chọn nhiều lịch để huỷ / xoá", open=False) as multi_box:
+        job_pick = gr.CheckboxGroup(label="Chọn lịch", choices=_job_choices(), value=[])
+        with gr.Row():
+            multi_action = gr.Radio(label="Làm gì", choices=["Huỷ lịch", "Xoá"], value="Huỷ lịch", scale=2)
+            multi_confirm = gr.Checkbox(label="Xác nhận xoá", value=False, scale=1)
+            multi_btn = gr.Button("Thực hiện", variant="primary", scale=1)
+        multi_status = gr.Markdown("")
+    multi_box.expand(fn=lambda: gr.update(choices=_job_choices(), value=[]), outputs=[job_pick])
+    multi_btn.click(
+        fn=handle_batch_jobs, inputs=[job_pick, multi_action, multi_confirm],
+        outputs=[jobs_table, multi_status, job_pick],
+    )
 
     tax = tr.build_taxonomy_widgets(
         "#### 🏷️ Danh mục & Tag của lịch đăng\n"

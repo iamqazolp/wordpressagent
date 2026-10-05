@@ -170,6 +170,8 @@ def install(root: Path, log: Log, python: str | None = None) -> None:
     run_logged([py, "-m", "pip", "install", "--upgrade", "pip", "-q"], root, log, env)
     if run_logged([py, "-m", "pip", "install", "-r", "requirements.txt"], root, log, env) != 0:
         raise LauncherError("Cài thư viện thất bại. Kiểm tra kết nối mạng rồi bấm thử lại.")
+    log("Đang tối ưu để lần mở đầu tiên nhanh hơn (1–2 phút)...")
+    run_logged([py, "-m", "compileall", "-q", "-j", "0", str(root / ".venv")], root, lambda _l: None, env)
     _stamp_path(root).write_text(requirements_stamp(root), encoding="utf-8")
     log("✓ Cài đặt xong.")
 
@@ -262,8 +264,10 @@ class AppRunner:
             )
         if not Path(self.python).exists():
             raise LauncherError("Chưa cài đặt xong (thiếu môi trường .venv).")
-        env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", "APP_OPEN_BROWSER": "false"}
+        env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", "APP_OPEN_BROWSER": "false",
+               "GRADIO_ANALYTICS_ENABLED": "False", "HF_HUB_DISABLE_TELEMETRY": "1"}
         log = self._open_log()
+        self._log_offset = log.tell()
         log.write(f"\n===== Khởi động {read_version(self.root)} =====\n".encode("utf-8"))
         log.flush()
         self.proc = subprocess.Popen(
@@ -271,12 +275,16 @@ class AppRunner:
             stdout=log, stderr=subprocess.STDOUT, creationflags=no_window_flags(),
         )
 
-    def wait_ready(self, timeout: float = 120.0, poll: float = 0.5, sleep: Callable[[float], None] | None = None) -> bool:
-        """Chờ app trả lời. False nếu hết giờ hoặc tiến trình chết sớm."""
+    def wait_ready(
+        self, timeout: float = 300.0, poll: float = 0.5, sleep: Callable[[float], None] | None = None,
+        log: Log | None = None,
+    ) -> bool:
+        """Chờ app trả lời. False nếu hết giờ hoặc tiến trình chết sớm. `log` nhận tiến độ + dòng mới của app.log."""
         import time
 
         sleep = sleep or time.sleep
         waited = 0.0
+        next_note = 5.0
         while waited < timeout:
             if not self.alive():
                 return False
@@ -284,7 +292,22 @@ class AppRunner:
                 return True
             sleep(poll)
             waited += poll
+            if log and waited >= next_note:
+                next_note += 5.0
+                for line in self._new_log_lines():
+                    log("  app: " + line)
+                log(f"Đang khởi động… {int(waited)}s (lần đầu có thể mất 1–3 phút, đừng tắt)")
         return False
+
+    def _new_log_lines(self) -> list[str]:
+        try:
+            with open(self.log_path, "rb") as f:
+                f.seek(getattr(self, "_log_offset", 0))
+                data = f.read()
+                self._log_offset = f.tell()
+        except OSError:
+            return []
+        return [ln for ln in data.decode("utf-8", "replace").splitlines() if ln.strip()][-5:]
 
     def stop(self) -> None:
         if self.proc is not None:

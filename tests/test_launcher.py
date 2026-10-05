@@ -200,3 +200,22 @@ def test_confirm_shutdown_only_for_local_requests(monkeypatch):
     assert "đang tắt" in app_control.on_confirm_shutdown(local)[2]
     assert calls == [1]
     assert "Chỉ tắt được" in app_control.on_confirm_shutdown(None)[2] and calls == [1]
+
+
+def test_wait_ready_reports_progress_and_app_log(tmp_path):
+    from launcher import core
+
+    r = core.AppRunner(tmp_path)
+    r.log_path.parent.mkdir()
+    r.log_path.write_text("loading gradio\n", encoding="utf-8")
+
+    class P:
+        def poll(self):
+            return None
+
+    r.proc = P()
+    r.responding = lambda: False
+    lines: list[str] = []
+    assert r.wait_ready(timeout=6, poll=1, sleep=lambda _s: None, log=lines.append) is False
+    assert any("loading gradio" in ln for ln in lines)
+    assert any("Đang khởi động" in ln for ln in lines)

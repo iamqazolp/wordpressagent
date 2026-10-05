@@ -212,7 +212,7 @@ class LauncherApp:
     def _launch(self, open_browser: bool) -> None:
         def work():
             self.runner.start()
-            return self.runner.wait_ready()
+            return self.runner.wait_ready(log=self.log)
 
         def done(ready, err):
             if isinstance(err, core.PortBusy):
@@ -231,7 +231,7 @@ class LauncherApp:
                 self._opened_browser = True
                 self.open_browser()
 
-        self.run_bg(work, done, "Đang khởi động ứng dụng...")
+        self.run_bg(work, done, "Đang khởi động ứng dụng (lần đầu 1–3 phút)...")
 
     def _fail(self, title: str, err: Exception) -> None:
         self.log(f"✗ {err}")
@@ -254,7 +254,7 @@ class LauncherApp:
         def work():
             self.runner.stop()
             self.runner.start()
-            return self.runner.wait_ready()
+            return self.runner.wait_ready(log=self.log)
 
         def done(ready, err):
             if err:

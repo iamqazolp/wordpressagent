@@ -44,6 +44,7 @@ def fake_wp(monkeypatch):
         return {"post_id": len(calls), "post_url": f"https://x/?p={len(calls)}", "edit_url": "e", "status": kw["status"]}
 
     monkeypatch.setattr(wp_client, "publish_product", product)
+    monkeypatch.setattr(wp_client, "check_wp_credentials", lambda cfg, **k: None)
     monkeypatch.setattr(wp_client, "upload_images", lambda paths, cfg, **kw: [{"id": 1}] * len(paths))
     return calls
 
@@ -102,7 +103,7 @@ def test_publish_and_record_writes_history(world, fake_wp):
     results = publishing.publish_and_record(arts, ["/missing.jpg"], "Sản phẩm WooCommerce", "draft", "10", "8")
     assert [r["success"] for r in results] == [True, True]
     rows = posts.list_posts()
-    assert {r.status for r in rows} == {"published"} and {r.post_type for r in rows} == {"product"}
+    assert {r.status for r in rows} == {"draft"} and {r.post_type for r in rows} == {"product"}
     d = posts.get_post(rows[0].id)
     assert d.category_ids == [5] and d.tags == ["t"] and d.regular_price == "10" and d.wp_post_url.startswith("https://x/?p=")
     assert fake_wp[0]["category_ids"] == [5]
@@ -225,7 +226,7 @@ def test_bulk_generate_and_publish_rows(world, fake_ai, monkeypatch):
     rows = bulk.generate_and_publish([{"product_name": "A", "regular_price": "7"}], ["shop", "blog"], None, False, "product", "draft")
     kinds = {(r.site_name, r.kind) for r in rows}
     assert kinds == {("shop", "published"), ("blog", "publish_failed")}
-    assert {r.status for r in posts.list_posts()} == {"published", "failed"}
+    assert {r.status for r in posts.list_posts()} == {"draft", "failed"}
     assert all(p.regular_price == "7" for p in posts.list_posts())      # lịch sử hàng loạt giờ có cả giá
 
 

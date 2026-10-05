@@ -51,6 +51,25 @@ def describe_upload_error(response) -> str:
     return f"HTTP {code}" + (f" – {hint}" if hint else "") + (f" [{detail}]" if detail else "")
 
 
+def check_wp_credentials(site_config: dict, timeout: int = 10) -> str | None:
+    """
+    Kiểm tra nhanh WordPress profile (Username + Application Password) của một website.
+    Trả None nếu hợp lệ, ngược lại là câu giải thích tiếng Việt (dùng để cảnh báo người dùng trước khi tải ảnh).
+    """
+    user = site_config.get("wp_user", "")
+    pwd = site_config.get("wp_app_password", "")
+    if not (user and pwd):
+        return "chưa điền WordPress Username & Application Password ở tab Quản Lý Website"
+    url = site_config["url"].rstrip("/") + "/wp-json/wp/v2/users/me"
+    try:
+        r = requests.get(url, auth=HTTPBasicAuth(user, pwd), timeout=timeout)
+    except Exception as e:
+        return f"không kết nối được website ({type(e).__name__})"
+    if r.status_code == 200:
+        return None
+    return f"WordPress profile không hợp lệ: {describe_upload_error(r)}"
+
+
 def upload_images(
     image_paths: list[str],
     site_config: dict,

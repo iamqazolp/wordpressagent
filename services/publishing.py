@@ -91,7 +91,7 @@ def publish_and_record(
                 continue
             _record(
                 db, site, articles.get(result["site_name"], {}), post_type,
-                "published" if result["success"] else "failed",
+                ("published" if post_status == "publish" else "draft") if result["success"] else "failed",
                 regular_price, sale_price, image_paths, "", result,
             )
     return results

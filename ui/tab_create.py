@@ -104,19 +104,32 @@ def publish_to_sites_ui(
 
     # Định dạng kết quả thành markdown
     report = ['### 📋 Kết Quả Đăng Bài:\n']
+    ok = [r for r in results if r['success']]
+    no_image = [r for r in ok if r.get('image_warning')]
+    failed = [r for r in results if not r['success']]
+    summary = f"**{len(ok)}/{len(results)} website đăng thành công**"
+    if no_image:
+        summary += f" · ⚠️ {len(no_image)} website lỗi/thiếu ảnh: " + ", ".join(r['site_name'] for r in no_image)
+    if failed:
+        summary += f" · ❌ {len(failed)} website thất bại: " + ", ".join(r['site_name'] for r in failed)
+    report.append(summary)
     for r in results:
         if r['success']:
             status_lbl = '📝 Nháp' if r['status'] == 'draft' else '🟢 Công khai'
             line = f"- **{r['site_name']}**: ✅ Thành công ({status_lbl}) | [Xem]({r['post_url']}) | [Sửa]({r['edit_url']})"
             if r.get('image_warning'):
-                line += f"\n  - ⚠️ *Lưu ý về hình ảnh:* {r['image_warning']}"
+                line += f"\n  - ⚠️ **{r['image_warning']}** Bài đã đăng nhưng THIẾU ẢNH."
             if r.get('taxonomy_warning'):
                 line += f"\n  - ⚠️ *Lưu ý về tag:* {r['taxonomy_warning']}"
             if r.get('category_warning'):
                 line += f"\n  - ⚠️ *Lưu ý về danh mục:* {r['category_warning']}"
             report.append(line)
         else:
-            report.append(f"- **{r['site_name']}**: ❌ {r['error']}")
+            report.append(f"- **{r['site_name']}**: ❌ **Thất bại:** {r['error']}")
+    if failed or no_image:
+        gr.Warning(summary.replace("**", ""), duration=15)
+    else:
+        gr.Info(f"🎉 Đã đăng {len(ok)}/{len(results)} website thành công.")
     return '\n\n'.join(report)
 
 

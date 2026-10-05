@@ -28,6 +28,7 @@ def world(mem_db, tmp_path, monkeypatch):
     s.close()
 
     calls = {}
+    monkeypatch.setattr(wp_client, "check_wp_credentials", lambda cfg, **k: None)
     monkeypatch.setattr(wp_client, "upload_images", lambda paths, cfg, **kw: calls.setdefault("up", paths) and [{"id": 7}] * len(paths))
     monkeypatch.setattr(wp_client, "ensure_tags", lambda cfg, scope, names: [11 for _ in names])
 
@@ -125,10 +126,12 @@ def test_publish_one_missing_config_and_blog_without_user(monkeypatch):
 def test_publish_one_image_warnings(monkeypatch):
     monkeypatch.setattr(wp_client, "publish_product", lambda **kw: {"post_id": 1, "post_url": "u", "edit_url": "e", "status": "draft"})
     r = pipeline.publish_one("s", {"wp_user": "", "wp_app_password": ""}, {"title": "t"}, ["/a.jpg"], "product", "draft")
-    assert r["success"] and "Chưa cấu hình WordPress" in r["image_warning"] and r["uploaded_count"] == 0
+    assert r["success"] and "chưa điền WordPress" in r["image_warning"] and r["uploaded_count"] == 0
+    monkeypatch.setattr(wp_client, "check_wp_credentials", lambda cfg, **k: None)
     monkeypatch.setattr(wp_client, "upload_images", lambda *a, **k: [])
     r = pipeline.publish_one("s", {"wp_user": "u", "wp_app_password": "p"}, {"title": "t"}, ["/a.jpg"], "product", "draft")
     assert "Tải ảnh thất bại" in r["image_warning"]
+    monkeypatch.setattr(wp_client, "check_wp_credentials", lambda cfg, **k: None)
     monkeypatch.setattr(wp_client, "upload_images", lambda *a, **k: (_ for _ in ()).throw(ValueError("x")))
     r = pipeline.publish_one("s", {"wp_user": "u", "wp_app_password": "p"}, {"title": "t"}, ["/a.jpg"], "product", "draft")
     assert r["success"] and r["image_warning"] == "Lỗi upload ảnh: x"

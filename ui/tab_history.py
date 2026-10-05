@@ -302,12 +302,14 @@ def _publish_history(
         f"- **Link sửa WP:** [Chỉnh sửa sản phẩm]({out.edit_url})\n"
     )
     if out.image_warning:
-        result_msg += f"- ⚠️ *Cảnh báo ảnh:* {out.image_warning}\n"
+        result_msg += f"- ⚠️ **Cảnh báo ảnh:** {out.image_warning} Bài đã đăng nhưng THIẾU ẢNH.\n"
     if out.taxonomy_warning:
         result_msg += f"- ⚠️ *Cảnh báo tag:* {out.taxonomy_warning}\n"
     if out.category_warning:
         result_msg += f"- ⚠️ *Cảnh báo danh mục:* {out.category_warning}\n"
 
+    if out.image_warning:
+        gr.Warning(f"⚠️ {out.site_name}: {out.image_warning}", duration=15)
     gr.Info(
         f"🔄 Đã cập nhật bài trên {out.site_name}!" if out.updated
         else f"🎉 Đã đăng thành công lên {out.site_name}!" if out.post_status == "publish"

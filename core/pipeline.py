@@ -124,7 +124,10 @@ def publish_one(
     image_warning = None
     image_paths = image_paths or []
     if image_paths:
-        if site_config.get('wp_user') and site_config.get('wp_app_password'):
+        profile_problem = wp_client.check_wp_credentials(site_config)
+        if profile_problem:
+            image_warning = f"ẢNH CHƯA ĐƯỢC TẢI LÊN ({len(image_paths)} ảnh): {profile_problem}."
+        else:
             upload_errors: list[str] = []
             try:
                 uploaded = wp_client.upload_images(
@@ -143,8 +146,6 @@ def publish_one(
             except Exception as e:
                 logger.warning(f'Upload ảnh thất bại tại {site_name}: {e}')
                 image_warning = f"Lỗi upload ảnh: {e}"
-        else:
-            image_warning = "Chưa cấu hình WordPress Username & Application Password ở tab Quản Lý Website nên chưa tải được ảnh lên WordPress."
 
     title = article_data.get('title', '')
     raw_html = article_data.get('raw_html', '')

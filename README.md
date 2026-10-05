@@ -19,25 +19,30 @@ Công cụ chạy ngay trên máy của bạn: nhập tên sản phẩm → AI v
 
 ---
 
-## 🚀 Cài đặt (làm một lần)
+## 🚀 Cài đặt & chạy (không cần dùng terminal)
 
-**Cần:** Python **3.11 trở lên** (khuyến nghị 3.12) — tải tại <https://www.python.org/downloads/> (trên Windows nhớ tick **"Add python.exe to PATH"**) và kết nối Internet.
+**Cần:** Python **3.11 trở lên** (khuyến nghị 3.12) — tải tại <https://www.python.org/downloads/> (trên Windows nhớ tick **"Add python.exe to PATH"** khi cài) và kết nối Internet.
 
-1. Giải nén gói `wordpress-agent-x.y.z.zip` vào một thư mục cố định (ví dụ `C:\WordPressAgent` hoặc `~/WordPressAgent`).
-2. Chạy file cài đặt:
-   - **Windows:** bấm đúp `install.bat`
-   - **macOS / Linux:** mở Terminal trong thư mục đó, chạy `./install.sh`
-3. Khi cài xong, file `.env` được tạo sẵn (Windows tự mở bằng Notepad). Điền **`GEMINI_API_KEY`** (bắt buộc) rồi lưu lại. Các mục khác có thể để nguyên:
+1. Giải nén gói `wordpress-agent-x.y.z.zip` vào một thư mục cố định (ví dụ `C:\WordPressAgent`).
+2. **Bấm đúp `WordPressAgent.pyw`** (nếu máy không mở được, bấm đúp `Mo-ung-dung.bat` — nó mở rồi tự đóng ngay). Một cửa sổ nhỏ hiện ra và tự làm hết:
+   - **Lần đầu:** tự cài thư viện (vài phút, cần Internet), có thanh tiến trình — **không có cửa sổ đen**.
+   - Hỏi **khoá Gemini API** (bắt buộc) ngay trong cửa sổ, tự ghi vào `.env` — không phải sửa file bằng tay. Đổi khoá lúc nào cũng được bằng nút **🔑 Khoá API…**.
+   - Tự khởi động ứng dụng và mở trình duyệt tại <http://127.0.0.1:7860>.
+3. Các nút trong cửa sổ: **🌐 Mở trình duyệt** · **⏹ Dừng ứng dụng** · **🔄 Khởi động lại** · **💾 Sao lưu** · **📄 Nhật ký**. Có thể thu nhỏ cửa sổ, **đừng đóng** khi đang dùng (đóng cửa sổ = hỏi tắt ứng dụng).
+4. Muốn tắt: bấm **⏹ Dừng ứng dụng** trong cửa sổ, hoặc nút **⏻ Tắt ứng dụng** ở đầu trang web (chỉ tắt được từ chính máy chạy ứng dụng).
 
-   | Biến | Ý nghĩa |
-   |---|---|
-   | `GEMINI_API_KEY` | Khoá AI (bắt buộc) |
-   | `GEMINI_BASE_URL`, `GEMINI_MODEL` | Địa chỉ/mô hình AI (mặc định đã đặt sẵn) |
-   | `SERP_API_KEY` | Tuỳ chọn: tự tìm tài liệu sản phẩm trên Google. Để trống thì nhập URL tham khảo bằng tay |
-   | `ENCRYPTION_KEY` | **Tự sinh, đừng sửa/xoá** — xem phần Sao lưu |
-   | `APP_USER`, `APP_PASSWORD` | Tuỳ chọn: đặt tên đăng nhập + mật khẩu cho giao diện |
+> Cách cũ vẫn dùng được: `install.bat` + `run.bat` (Windows) hoặc `./install.sh` + `./run.sh` (macOS/Linux). Trên macOS/Linux có thể mở cửa sổ khởi động bằng `python3 WordPressAgent.pyw`.
 
-4. Chạy ứng dụng: **Windows** bấm đúp `run.bat` · **macOS/Linux** `./run.sh`. Trình duyệt tự mở tại <http://127.0.0.1:7860>.
+Các mục trong file `.env` (thường không cần sửa tay):
+
+| Biến | Ý nghĩa |
+|---|---|
+| `GEMINI_API_KEY` | Khoá AI (bắt buộc) |
+| `GEMINI_BASE_URL`, `GEMINI_MODEL` | Địa chỉ/mô hình AI (mặc định đã đặt sẵn) |
+| `SERP_API_KEY` | Tuỳ chọn: tự tìm tài liệu sản phẩm trên Google. Để trống thì nhập URL tham khảo bằng tay |
+| `ENCRYPTION_KEY` | **Tự sinh, đừng sửa/xoá** — xem phần Sao lưu |
+| `PORT` | Cổng chạy (mặc định 7860) |
+| `APP_USER`, `APP_PASSWORD` | Tuỳ chọn: tên đăng nhập + mật khẩu cho giao diện |
 
 > Mặc định ứng dụng **chỉ truy cập được từ chính máy bạn**. Nếu muốn dùng từ máy khác trong mạng, đặt `HOST=0.0.0.0` **và** `APP_USER`/`APP_PASSWORD` trong `.env`.
 
@@ -103,7 +108,7 @@ Dữ liệu của bạn nằm ở: thư mục `data/` (cơ sở dữ liệu, log
 
 1. **Sao lưu đầy đủ** như trên.
 2. Tắt ứng dụng, giải nén gói mới **đè lên thư mục cũ** (gói không chứa `data/` và `.env` nên dữ liệu của bạn không bị ghi đè).
-3. Chạy lại `install.bat` / `./install.sh` (cập nhật thư viện), rồi `run.bat` / `./run.sh`. Cấu trúc dữ liệu tự nâng cấp và tự chụp bản sao lưu trước khi nâng cấp.
+3. Bấm đúp lại `WordPressAgent.pyw` — nó tự cập nhật thư viện khi cần. Cấu trúc dữ liệu tự nâng cấp và tự chụp bản sao lưu trước khi nâng cấp.
 
 ---
 
@@ -118,11 +123,11 @@ Dữ liệu của bạn nằm ở: thư mục `data/` (cơ sở dữ liệu, log
 
 | Hiện tượng | Cách xử lý |
 |---|---|
-| `install` báo không có Python | Cài Python 3.11+ (tick *Add to PATH* trên Windows) rồi chạy lại |
-| Mở app báo chưa cấu hình `GEMINI_API_KEY` | Điền khoá vào `.env`, tắt và chạy lại |
+| Không có Python / cửa sổ khởi động không mở | Cài Python 3.11+ (tick *Add to PATH* trên Windows) rồi bấm đúp lại `WordPressAgent.pyw`. Lỗi được ghi ở `logs/launcher.log` |
+| Mở app báo chưa cấu hình `GEMINI_API_KEY` | Bấm **🔑 Khoá API…** trong cửa sổ khởi động, điền khoá rồi khởi động lại |
 | Kiểm tra kết nối báo lỗi WC/WP | Kiểm tra URL (có `https://`), khoá WooCommerce quyền Đọc/Ghi, Application Password; website phải bật REST API |
 | Không tải được ảnh | Cần điền **WP Username + Application Password** của website |
-| Cổng 7860 đang được dùng | Đặt `PORT=7861` trong `.env` |
+| Cổng 7860 đang được dùng (cửa sổ báo «đã có ứng dụng chạy») | Bấm **🌐 Mở trình duyệt** nếu đó là ứng dụng này; hoặc đặt `PORT=7861` trong `.env` |
 | Cần hỗ trợ | Chụp màn hình cửa sổ đen (log) khi lỗi và gửi cho người hỗ trợ — **đừng** gửi file `.env` |
 
 ## 🔒 Bảo mật

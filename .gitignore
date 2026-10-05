@@ -44,3 +44,4 @@ spam_enter.sh
 # Bản phát hành & sao lưu
 dist/
 backups/
+logs/

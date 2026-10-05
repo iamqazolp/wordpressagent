@@ -8,6 +8,7 @@ from ui.tab_create import (
     on_change_preview_site, on_edit_title, on_edit_short_desc, on_toggle_edit_mode, on_save_html_edit
 )
 from ui.seo_panel import refresh_seo_panel
+from ui.app_control import build_app_control
 from ui.taxonomy_panel import (
     refresh_taxonomy_controls, on_categories_input, on_tags_input,
     on_sync_categories, on_ai_suggest, autofill_taxonomy,
@@ -52,6 +53,8 @@ def create_app() -> gr.Blocks:
             <p style="color:#666;margin:5px 0 0;">Quản lý đa website • Tự động viết & đăng sản phẩm • Chống trùng lặp SEO • Lên lịch tự động</p>
         </div>
         """)
+
+        build_app_control()
 
         with gr.Tabs():
             # Tab 0: Dashboard (tab đầu tiên)

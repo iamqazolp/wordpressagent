@@ -25,7 +25,8 @@ EXCLUDE = (
 )
 # Bắt buộc phải có trong bản phát hành (kiểm tra để không giao thiếu)
 REQUIRED = ("app.py", "requirements.txt", "requirements.lock", "install.sh", "install.bat", "run.sh", "run.bat",
-            ".env.example", "README.md", "VERSION", "core/wp_client.py", "ui/main_ui.py", "tools/backup.py", "tools/init_env.py")
+            ".env.example", "README.md", "VERSION", "core/wp_client.py", "ui/main_ui.py", "tools/backup.py", "tools/init_env.py",
+            "WordPressAgent.pyw", "Mo-ung-dung.bat", "launcher/core.py", "launcher/gui.py")
 FORBIDDEN_PREFIXES = ("data/", "config/sites.json", "backups/", ".venv/", "dist/")
 FORBIDDEN_EXACT = (".env",)   # .env.example là file mẫu, được phép
 

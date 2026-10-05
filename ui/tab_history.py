@@ -19,7 +19,8 @@ logger = logging.getLogger(__name__)
 ALL = "Tất cả"
 _STATUS_FILTERS = {
     "💾 Đã lưu nháp": post_service.STATUS_SAVED,
-    "✅ Đã đăng": post_service.STATUS_PUBLISHED,
+    "✅ Đã đăng": ("published",),
+    "📝 Nháp WP": ("draft",),
     "❌ Lỗi": post_service.STATUS_FAILED,
 }
 _STATUS_LABELS = {
@@ -29,6 +30,9 @@ _STATUS_LABELS = {
     "failed": "❌ Lỗi",
     "trashed": "🗑️ Thùng rác WP",
     "missing": "❓ Không còn trên WP",
+}
+_CHOICE_STATUS = {
+    "saved": "Đã lưu", "published": "Đã đăng", "draft": "Nháp WP", "trashed": "Thùng rác WP", "missing": "Không còn trên WP",
 }
 _TABLE_COLUMNS = ["ID", "Sản phẩm", "Tiêu đề", "Website", "Loại", "Trạng thái", "Ảnh", "Giá gốc", "Giá KM",
                   "Danh mục / Tag", "Ngày tạo (GMT+7)", "Link WP"]
@@ -72,7 +76,7 @@ def get_history_post_choices(site_filter: str = ALL, status_filter: str = ALL) -
     """Tạo danh sách lựa chọn bài viết cho Dropdown."""
     choices = []
     for r in post_service.list_posts(_site_arg(site_filter), _statuses(status_filter)):
-        status_text = "Đã lưu" if r.status == "saved" else ("Đã đăng" if r.status in ("published", "draft") else "Lỗi")
+        status_text = _CHOICE_STATUS.get(r.status, "Lỗi")
         choices.append(f"#{r.id} - {r.product_name[:35]} ({r.site_name}) [{status_text}]")
     return choices if choices else ["(Chưa có bài viết nào)"]
 
@@ -80,7 +84,9 @@ def get_history_post_choices(site_filter: str = ALL, status_filter: str = ALL) -
 def _status_text(d: post_service.PostDetail) -> str:
     if d.status == "saved":
         return "💾 Đã lưu nháp trên Web"
-    return "✅ Đã đăng lên Website" if d.status == "published" else d.status
+    if d.status == "published":
+        return "✅ Đã đăng lên Website"
+    return _STATUS_LABELS.get(d.status, d.status)
 
 
 def _info_md(d: post_service.PostDetail, date_label: str, date_value: str, image_count: int, status_text: str | None = None,
@@ -283,7 +289,11 @@ def _publish_history(
         return f"❌ {verb.capitalize()} thất bại: {str(e)}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
     status_badge = "🟢 Công khai" if out.post_status == "publish" else "📝 Nháp"
-    heading = f"### 🔄 Đã cập nhật bài trên {out.site_name}!\n\n" if out.updated else f"### 🎉 Đăng thành công lên {out.site_name}!\n\n"
+    heading = (
+        f"### 🔄 Đã cập nhật bài trên {out.site_name}!\n\n" if out.updated
+        else f"### 🎉 Đăng thành công lên {out.site_name}!\n\n" if out.post_status == "publish"
+        else f"### 📝 Đã lưu NHÁP lên {out.site_name} (chưa công khai)\n\n"
+    )
     result_msg = (
         heading +
         f"- **Trạng thái:** {status_badge}\n"
@@ -298,7 +308,11 @@ def _publish_history(
     if out.category_warning:
         result_msg += f"- ⚠️ *Cảnh báo danh mục:* {out.category_warning}\n"
 
-    gr.Info(f"🔄 Đã cập nhật bài trên {out.site_name}!" if out.updated else f"🎉 Đã đăng thành công lên {out.site_name}!")
+    gr.Info(
+        f"🔄 Đã cập nhật bài trên {out.site_name}!" if out.updated
+        else f"🎉 Đã đăng thành công lên {out.site_name}!" if out.post_status == "publish"
+        else f"📝 Đã lưu nháp lên {out.site_name} (chưa công khai)"
+    )
     updated_choices = get_history_post_choices(site_filter, status_filter)
     current_choice = next((c for c in updated_choices if c.startswith(f"#{out.post_id} - ")), None)
 
@@ -306,7 +320,7 @@ def _publish_history(
     info_md = "\n".join([
         f"### 📄 Bài viết #{d.id}: **{d.product_name}**",
         f"- **Website đích:** `{d.site_name}` ({d.site_url})",
-        f"- **Trạng thái:** `✅ Đã đăng lên Website ({status_badge})`",
+        f"- **Trạng thái:** `{'✅ Đã đăng công khai' if out.post_status == 'publish' else '📝 Đã đưa lên WordPress ở dạng nháp (chưa công khai)'}`",
         f"- **Số lượng ảnh đính kèm:** {len(out.image_paths)} ảnh",
         f"- **Ngày đăng ({TZ_LABEL}):** {fmt_vn(d.published_at, '%Y-%m-%d %H:%M', '')}",
         f"- **Link WordPress:** [Xem sản phẩm trên Web]({out.post_url})",
@@ -384,7 +398,7 @@ def build_tab_history(db_session=None) -> dict:
         )
         status_filter = gr.Dropdown(
             label="📌 Lọc theo trạng thái",
-            choices=["Tất cả", "💾 Đã lưu nháp", "✅ Đã đăng", "❌ Lỗi"],
+            choices=["Tất cả", "💾 Đã lưu nháp", "📝 Nháp WP", "✅ Đã đăng", "❌ Lỗi"],
             value="Tất cả",
             scale=1,
         )
@@ -603,7 +617,13 @@ def build_tab_history(db_session=None) -> dict:
         outputs=[action_result_box, preview_output, images_gallery, history_table, post_selector, post_info_box, images_upload],
     )
 
-    publish_single_btn.click(
+    def _busy_msg(verb):
+        return lambda: (
+            f"⏳ **Đang {verb}…** tải ảnh (nén/watermark) rồi gửi lên WordPress, thường 10–60 giây. "
+            "Vui lòng KHÔNG đóng trang hoặc bấm lại."
+        )
+
+    publish_single_btn.click(fn=_busy_msg("đăng bài"), outputs=[action_result_box], queue=False).then(
         fn=on_publish_history_post,
         inputs=[
             post_selector,
@@ -626,7 +646,7 @@ def build_tab_history(db_session=None) -> dict:
         show_progress=True,
     )
 
-    update_single_btn.click(
+    update_single_btn.click(fn=_busy_msg("cập nhật bài"), outputs=[action_result_box], queue=False).then(
         fn=on_update_history_post,
         inputs=[
             post_selector,

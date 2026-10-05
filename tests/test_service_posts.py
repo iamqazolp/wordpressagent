@@ -172,8 +172,11 @@ def test_ui_save_publish_delete_messages(world):
     assert ui.on_publish_history_post("", "t", "", "", "", "h", "product", "draft")[0] == "❌ Vui lòng chọn một bài viết để đăng!"
     assert ui.on_publish_history_post("#9999 - x", "t", "", "", "", "h", "product", "draft")[0].startswith("❌ Không tìm thấy bài viết")
     r = ui.on_publish_history_post(_choice(h1), "T2", "", "", "", "<p>n</p>", "Sản phẩm WooCommerce", "draft")
-    assert r[0].startswith("### 🎉 Đăng thành công lên shop!") and "📝 Nháp" in r[0] and "Hình ảnh tải lên WP:** 1/1" in r[0]
+    assert r[0].startswith("### 📝 Đã lưu NHÁP lên shop") and "📝 Nháp" in r[0] and "Hình ảnh tải lên WP:** 1/1" in r[0]
     assert "Cảnh báo" not in r[0] and len(r) == 6 and "Ngày đăng (GMT+7)" in r[4]
+    assert "nháp" in r[4] and "Đã đăng" not in r[4]
+    assert any("[Nháp WP]" in c for c in ui.get_history_post_choices())
+    assert not any("[Đã đăng]" in c for c in ui.get_history_post_choices("Tất cả", "✅ Đã đăng"))
 
     r = ui.on_publish_history_post(_choice(h1), "T2", "", "", "", "<p>n</p>", "Bài viết Blog", "publish")
     assert "Cảnh báo danh mục" in r[0]

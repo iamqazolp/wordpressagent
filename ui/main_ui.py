@@ -244,9 +244,10 @@ def create_app() -> gr.Blocks:
             history_comps['images_upload'],
         ]
 
-        def _on_publish_and_sync(art_state, imgs, p_status, p_type, r_price, s_price, opt_img, rem_bg, s_filter, st_filter, wm_chk=True):
+        def _on_publish_and_sync(art_state, imgs, p_status, p_type, r_price, s_price, opt_img, rem_bg, s_filter, st_filter, wm_chk=True,
+                                 progress=gr.Progress()):
             msg = publish_to_sites_ui(art_state, imgs, p_status, p_type, r_price, s_price, optimize_images=opt_img,
-                                      remove_bg=rem_bg, apply_watermark=wm_chk)
+                                      remove_bg=rem_bg, apply_watermark=wm_chk, progress=progress)
             df = fetch_history_data(s_filter, st_filter)
             choices = get_history_post_choices(s_filter, st_filter)
             new_val = choices[0] if choices else None
@@ -259,6 +260,13 @@ def create_app() -> gr.Blocks:
         )
 
         create_comps['publish_btn'].click(
+            fn=lambda: (
+                "⏳ **Đang đăng bài…** tải ảnh (nén/watermark) rồi gửi lên từng website, thường 10–60 giây mỗi site. "
+                "Vui lòng KHÔNG đóng trang hoặc bấm lại."
+            ),
+            outputs=[create_comps['publish_result']],
+            queue=False,
+        ).then(
             fn=_on_publish_and_sync,
             inputs=[
                 articles_state,

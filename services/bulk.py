@@ -139,17 +139,17 @@ def generate_and_save(
                 randomize=randomize,
                 template_name=template_name,
             )
-            _save_as_drafts(articles, base["regular_price"], base["sale_price"])
-            results.append({**base, "articles": articles, "status": "success"})
+            saved = _save_as_drafts(articles, base["regular_price"], base["sale_price"])
+            results.append({**base, "articles": articles, "status": "success", "saved": saved})
         except Exception as e:
             logger.exception(f"Lỗi khi tạo bài hàng loạt cho {name}")
             results.append({**base, "articles": {}, "status": "error", "error": str(e)})
     return results
 
 
-def _save_as_drafts(articles: dict[str, dict], regular_price: str, sale_price: str) -> None:
+def _save_as_drafts(articles: dict[str, dict], regular_price: str, sale_price: str) -> tuple[tuple[str, int], ...]:
     # Hàng loạt luôn lưu theo loại 'product' (hành vi cũ của tab này)
-    publishing.save_drafts(articles, [], "product", regular_price, sale_price)
+    return publishing.save_drafts(articles, [], "product", regular_price, sale_price).saved
 
 
 def generate_and_publish(

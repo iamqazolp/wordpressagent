@@ -27,13 +27,14 @@ Progress = Callable[[float, str], None]
 class SaveDraftsResult:
     saved_count: int
     image_count: int
+    saved: tuple[tuple[str, int], ...] = ()   # (tên website, id bài trong kho)
 
 
 def _record(db, site, article: dict, post_type: str, status: str, regular_price: str, sale_price: str,
-            image_paths: list[str], default_name: str, result: dict | None = None) -> None:
+            image_paths: list[str], default_name: str, result: dict | None = None) -> int | None:
     """Ghi một dòng PostHistory từ bài + (nếu có) kết quả đăng."""
     result = result or {}
-    crud.create_post_history(
+    row = crud.create_post_history(
         db,
         site_id=site.id,
         product_name=article.get("product_name") or article.get("title", default_name),
@@ -51,6 +52,7 @@ def _record(db, site, article: dict, post_type: str, status: str, regular_price:
         category_ids_json=json.dumps(taxonomy_service.effective_category_ids(article, post_type)),
         tags_json=json.dumps(article.get("tags") or [], ensure_ascii=False),
     )
+    return row.id if row else None
 
 
 def publish_and_record(
@@ -111,12 +113,13 @@ def save_drafts(
     tuỳ chọn người dùng chọn khi đăng), nên có thể đổi hoặc bỏ watermark sau khi đã lưu bài.
     """
     image_paths = image_service.persist_images(image_paths or [])
-    saved = 0
+    saved: list[tuple[str, int]] = []
     with session_scope() as db:
         for site_name, art in articles.items():
             site = crud.get_site_by_name(db, site_name)
             if not site:
                 continue
-            _record(db, site, art, post_type, "saved", regular_price, sale_price, image_paths, "Sản phẩm")
-            saved += 1
-    return SaveDraftsResult(saved_count=saved, image_count=len(image_paths))
+            row_id = _record(db, site, art, post_type, "saved", regular_price, sale_price, image_paths, "Sản phẩm")
+            if row_id:
+                saved.append((site_name, row_id))
+    return SaveDraftsResult(saved_count=len(saved), image_count=len(image_paths), saved=tuple(saved))

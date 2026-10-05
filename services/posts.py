@@ -280,3 +280,78 @@ def publish_saved_post(
             category_warning=res.get("category_warning"),
             updated=bool(existing_id),
         )
+
+
+# ── Xử lý hàng loạt các bài đã lưu (tab Tạo hàng loạt) ─────────────────────────
+
+@dataclass(frozen=True)
+class BatchItem:
+    post_id: int
+    product_name: str
+    site_name: str
+    ok: bool
+    detail: str = ""             # URL (đăng ngay), giờ hẹn (hẹn giờ) hoặc lỗi
+    when: datetime | None = None
+
+
+def publish_saved_batch(post_ids: list[int], post_status: str) -> list[BatchItem]:
+    """Đăng ngay từng bài đã lưu (nội dung/ảnh/danh mục như đã lưu, xử lý ảnh mặc định). Một bài lỗi không chặn các bài khác."""
+    out: list[BatchItem] = []
+    for pid in post_ids:
+        d = get_post(pid)
+        if not d:
+            out.append(BatchItem(pid, "?", "?", False, "Không tìm thấy bài"))
+            continue
+        try:
+            res = publish_saved_post(
+                pid, d.title, d.short_description, d.regular_price, d.sale_price, d.raw_html,
+                d.post_type, post_status,
+            )
+            note = res.post_url + (f" ⚠️ {res.image_warning}" if res.image_warning else "")
+            out.append(BatchItem(pid, d.product_name, d.site_name, True, note))
+        except (ServiceError, PublishError) as e:
+            out.append(BatchItem(pid, d.product_name, d.site_name, False, e.message))
+        except Exception as e:
+            out.append(BatchItem(pid, d.product_name, d.site_name, False, str(e)))
+    return out
+
+
+def schedule_saved_batch(
+    post_ids: list[int],
+    post_status: str,
+    start: datetime,
+    post_gap_minutes: int = 0,
+    site_gap_minutes: int = 0,
+) -> list[BatchItem]:
+    """
+    Hẹn giờ đăng các bài đã lưu; mỗi (bài, website) là một lịch riêng nên có thể đăng ở giờ khác nhau:
+    giờ = start + (thứ tự sản phẩm × post_gap) + (thứ tự website của sản phẩm đó × site_gap).
+    Khi đến giờ, lịch cập nhật chính bản ghi trong kho (không tạo bản ghi trùng).
+    """
+    from datetime import timedelta
+
+    from services import schedules  # tránh vòng import lúc nạp module
+
+    details = [d for d in (get_post(p) for p in post_ids) if d]
+    product_index: dict[str, int] = {}
+    site_index: dict[str, int] = {}
+    out: list[BatchItem] = []
+    for d in details:
+        pi = product_index.setdefault(d.product_name, len(product_index))
+        si = site_index.get(d.product_name, 0)
+        site_index[d.product_name] = si + 1
+        when = start + timedelta(minutes=pi * max(post_gap_minutes, 0) + si * max(site_gap_minutes, 0))
+        art = {
+            "title": d.title, "raw_html": d.raw_html, "short_description": d.short_description,
+            "product_name": d.product_name, "category_ids": d.category_ids, "tags": d.tags,
+            "category_scope": taxonomy_svc.scope_of(d.post_type), "history_id": d.id,
+        }
+        try:
+            schedules.schedule_post(
+                {d.site_name: art}, d.existing_image_paths, post_status, d.post_type, when,
+                d.regular_price, d.sale_price,
+            )
+            out.append(BatchItem(d.id, d.product_name, d.site_name, True, "", when))
+        except ServiceError as e:
+            out.append(BatchItem(d.id, d.product_name, d.site_name, False, e.message))
+    return out

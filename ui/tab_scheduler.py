@@ -81,8 +81,8 @@ def build_tab_scheduler() -> dict:
         with gr.Column(scale=1):
             job_id_input = gr.Textbox(label="Nhập ID lịch đăng", placeholder="VD: 1, 2...")
             with gr.Row():
-                cancel_btn = gr.Button("🚫 Hủy lịch đã hẹn", variant="stop")
-                delete_btn = gr.Button("🗑️ Xóa bản ghi", variant="secondary")
+                cancel_btn = gr.Button("Huỷ lịch (giữ bản ghi)", variant="stop")
+                delete_btn = gr.Button("Xoá khỏi danh sách", variant="secondary")
         with gr.Column(scale=2):
             action_status = gr.Markdown("")
 

@@ -322,9 +322,13 @@ def create_app() -> gr.Blocks:
             outputs=history_detail_outputs,
         )
 
+        site_names_state = gr.State(create_comps['site_names'])
         create_comps['schedule_btn'].click(
-            fn=schedule_post_ui,
+            fn=lambda mode, *rest: schedule_post_ui(
+                *rest[:7], mode == "Mỗi website một giờ", *rest[7:],
+            ),
             inputs=[
+                create_comps['schedule_mode'],
                 articles_state,
                 create_comps['image_input'],
                 create_comps['post_status_selector'],
@@ -332,6 +336,8 @@ def create_app() -> gr.Blocks:
                 create_comps['regular_price_input'],
                 create_comps['sale_price_input'],
                 create_comps['schedule_datetime_picker'],
+                site_names_state,
+                *create_comps['site_time_pickers'],
             ],
             outputs=[create_comps['schedule_result']],
         )

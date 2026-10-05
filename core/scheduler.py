@@ -70,6 +70,18 @@ def execute_scheduled_job(job_id: int):
             site_obj = crud.get_site_by_name(db, s_name)
             if site_obj:
                 art = articles.get(s_name, {})
+                ok = bool(res.get("success"))
+                ok_status = "published" if job.post_status == "publish" else "draft"
+                history_id = art.get("history_id")
+                existing = crud.get_post_history_by_id(db, int(history_id)) if history_id else None
+                if existing:
+                    existing.status = ok_status if ok else "failed"
+                    existing.wp_post_id = str(res.get("post_id", "")) if res.get("post_id") else existing.wp_post_id
+                    existing.wp_post_url = res.get("post_url") or existing.wp_post_url
+                    existing.error_message = None if ok else res.get("error")
+                    existing.published_at = now_vn()
+                    db.commit()
+                    continue
                 crud.create_post_history(
                     db,
                     site_id=site_obj.id,
@@ -77,7 +89,7 @@ def execute_scheduled_job(job_id: int):
                     title=art.get("title", job.product_name),
                     raw_html=art.get("raw_html", ""),
                     post_type=job.post_type,
-                    status="published" if res.get("success") else "failed",
+                    status=ok_status if ok else "failed",
                     wp_post_id=str(res.get("post_id", "")) if res.get("post_id") else None,
                     wp_post_url=res.get("post_url"),
                     error_message=res.get("error"),

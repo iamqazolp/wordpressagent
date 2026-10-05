@@ -246,7 +246,7 @@ def test_ui_bulk_contract(world, fake_ai, fake_wp, tmp_path):
     results, table, msg = tab_bulk.run_bulk_generate(state, ["shop", "blog"], "(Mặc định)", False)
     assert [r["status"] for r in results] == ["success"] and len(table) == 2
     assert list(table.columns) == tab_bulk._RESULT_COLUMNS and table.iloc[0]["Trạng thái"] == "💾 Đã lưu nháp trên Web"
-    assert msg.startswith("### 💾 Hoàn tất tạo và lưu nháp bài viết cho 1 sản phẩm")
+    assert msg.startswith("Đã tạo và lưu 1/1 sản phẩm vào kho")
 
     assert tab_bulk.run_bulk_generate_and_publish(state, [], "(Mặc định)", False, "product", "draft")[1].startswith("❌ Vui lòng chọn")
     table, msg = tab_bulk.run_bulk_generate_and_publish(state, ["shop"], "(Mặc định)", False, "product", "draft")
@@ -277,3 +277,77 @@ def test_short_description_note_falls_back_to_table(world, fake_ai, monkeypatch)
     assert arts["shop"]["short_description"].startswith("<table") and arts["shop"]["short_desc_warning"]
     *_, msg = tab_create.run_pipeline_ui("Quạt", None, "", "", ["shop"], False, "(Mặc định)", "ngắn")
     assert "⚠️" in msg
+
+
+def test_bulk_process_batch_publish_and_schedule(world, fake_ai, fake_wp, monkeypatch):
+    from datetime import timedelta
+    from core import scheduler as core_scheduler
+    from core.timeutil import now_vn
+    from services import posts
+
+    results, table, _ = tab_bulk.run_bulk_generate(
+        [{"product_name": "A"}, {"product_name": "B"}], ["shop", "blog"], "(Mặc định)", False)
+    choices = tab_bulk._batch_choices(results)
+    assert len(choices) == 4 and all(c.startswith("#") for c in choices)
+    assert "Kho bài #" in table.iloc[0]["Chi tiết / Lỗi"]
+
+    # đăng ngay hai bài đã chọn
+    msg = tab_bulk.process_batch(choices[:2], "Đăng ngay", "draft", None, 0, 0)
+    assert msg.startswith("**Đã đăng 2/2 bài.**")
+    assert {posts.get_post(i).status for i in tab_bulk._ids_from(choices[:2])} == {"draft"}
+
+    # hẹn giờ: mỗi (bài, site) một lịch, giờ lệch theo khoảng cách
+    jobs = []
+    monkeypatch.setattr(core_scheduler, "schedule_publish_job", lambda **kw: jobs.append(kw) or len(jobs))
+    start = now_vn() + timedelta(hours=1)
+    msg = tab_bulk.process_batch(choices[1:3], "Hẹn giờ", "publish", start, 30, 5)
+    assert msg.startswith("**Đã hẹn giờ 2/2 bài.**") and len(jobs) == 2
+    assert jobs[1]["scheduled_time"] - jobs[0]["scheduled_time"] == timedelta(minutes=30)
+    assert all(next(iter(j["articles"].values()))["history_id"] for j in jobs)
+    assert tab_bulk.process_batch([], "Đăng ngay", "draft", None, 0, 0).startswith("❌")
+
+
+def test_schedule_per_site_creates_one_job_per_site(world, monkeypatch):
+    from datetime import timedelta
+    from core import scheduler as core_scheduler
+    from core.timeutil import now_vn
+
+    jobs = []
+    monkeypatch.setattr(core_scheduler, "schedule_publish_job", lambda **kw: jobs.append(kw) or len(jobs))
+    arts = _articles()
+    t1, t2 = now_vn() + timedelta(hours=1), now_vn() + timedelta(hours=3)
+    msg = tab_create.schedule_post_ui(arts, None, "draft", "product", "", "", None, True, ["shop", "blog"], t1, t2)
+    assert msg.startswith("### ⏰ Đã đặt 2 lịch") and len(jobs) == 2
+    assert [list(j["articles"]) for j in jobs] == [["shop"], ["blog"]]
+    assert [j["scheduled_time"] for j in jobs] == [t1, t2]
+    one = tab_create.schedule_post_ui(arts, None, "draft", "product", "", "", t1, False, ["shop", "blog"], t1, t2)
+    assert one.startswith("### ⏰ Đã đặt 1 lịch") and list(jobs[-1]["articles"]) == ["shop", "blog"]
+
+
+def test_scheduled_job_updates_saved_history_row(world, fake_wp, monkeypatch):
+    import json
+    from datetime import timedelta
+    from core import scheduler as core_scheduler
+    from core.timeutil import now_vn
+    from db import crud
+    from db.database import session_scope
+    from services import posts
+
+    from db import database
+
+    monkeypatch.setattr(core_scheduler, "SessionLocal", database.SessionLocal)
+    saved = publishing.save_drafts({"shop": _articles()["shop"]}, [], "product").saved
+    pid = saved[0][1]
+    d = posts.get_post(pid)
+    with session_scope() as db:
+        job = crud.create_scheduled_post(
+            db, product_name=d.product_name,
+            article_data_json=json.dumps({"shop": {"title": "X", "raw_html": "<p>x</p>", "history_id": pid}}),
+            site_names_json=json.dumps(["shop"]), scheduled_time=now_vn() + timedelta(hours=1),
+            post_type="product", post_status="draft", regular_price="", sale_price="", image_paths_json="[]",
+        )
+        job_id = job.id
+    core_scheduler.execute_scheduled_job(job_id)
+    after = posts.get_post(pid)
+    assert after.status == "draft" and after.wp_post_url.startswith("https://x/?p=")
+    assert len(posts.list_posts()) == 1       # không sinh bản ghi trùng

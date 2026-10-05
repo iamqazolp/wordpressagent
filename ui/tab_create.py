@@ -274,41 +274,48 @@ def schedule_post_ui(
     regular_price="",
     sale_price="",
     scheduled_datetime=None,
+    per_site=False,
+    site_names=(),
+    *site_times,
 ) -> str:
-    """Lên lịch đăng bài tự động qua APScheduler bằng bộ chọn ngày giờ trực quan."""
+    """Lên lịch đăng tự động: cùng một giờ cho mọi website, hoặc mỗi website một giờ (per_site)."""
     if not articles_state:
         return "❌ Chưa có nội dung bài viết nào để lên lịch! Hãy tạo bài viết trước."
 
-    target_time = parse_scheduled_datetime(scheduled_datetime)
-    if not target_time:
-        return "❌ Vui lòng chọn ngày và giờ đăng bài hợp lệ."
-
     try:
-        res = schedule_service.schedule_post(
-            articles=articles_state,
-            image_paths=extract_file_paths(image_files),
-            post_status=post_status,
-            post_type=post_type,
-            scheduled_time=target_time,
-            regular_price=regular_price,
-            sale_price=sale_price,
-        )
+        if per_site:
+            times = {n: parse_scheduled_datetime(t) for n, t in zip(site_names, site_times)}
+            times = {n: t for n, t in times.items() if t and n in articles_state}
+            results = schedule_service.schedule_post_per_site(
+                articles_state, extract_file_paths(image_files), post_status, post_type, times,
+                regular_price, sale_price,
+            )
+        else:
+            target_time = parse_scheduled_datetime(scheduled_datetime)
+            if not target_time:
+                return "❌ Vui lòng chọn ngày và giờ đăng bài hợp lệ."
+            results = [schedule_service.schedule_post(
+                articles=articles_state,
+                image_paths=extract_file_paths(image_files),
+                post_status=post_status,
+                post_type=post_type,
+                scheduled_time=target_time,
+                regular_price=regular_price,
+                sale_price=sale_price,
+            )]
     except ServiceError as e:
         return f"❌ {e}"
     except Exception as e:
         logger.exception("Lỗi khi lên lịch đăng bài")
         return f"❌ Có lỗi xảy ra khi lên lịch đăng: {str(e)}"
 
-    weekday_names = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"]
-    weekday = weekday_names[res.scheduled_time.weekday()]
-    return (
-        f"### ⏰ Đã đặt lịch\n"
-        f"- **Mã lịch:** `#{res.job_id}`\n"
-        f"- **Sản phẩm:** {res.product_name}\n"
-        f"- **Thời gian đăng dự kiến:** `{res.scheduled_time.strftime('%H:%M')} ({TZ_LABEL}) - {weekday}, ngày {res.scheduled_time.strftime('%d/%m/%Y')}`\n"
-        f"- **Áp dụng cho:** {len(res.site_names)} website ({', '.join(res.site_names)})\n"
-        f"- **Đăng dưới dạng:** `{res.post_status}`"
-    )
+    lines = [f"### ⏰ Đã đặt {len(results)} lịch"]
+    for res in results:
+        lines.append(
+            f"- `#{res.job_id}` · {', '.join(res.site_names)} · "
+            f"{res.scheduled_time.strftime('%H:%M %d/%m/%Y')} ({TZ_LABEL}) · đăng dạng `{res.post_status}`"
+        )
+    return "\n".join(lines)
 
 
 def on_change_preview_site(selected_site, articles_state, edit_mode_active):
@@ -443,6 +450,9 @@ def build_tab_create(db_session=None) -> dict:
             publish_result = gr.Markdown()
 
             with gr.Accordion("Hẹn giờ đăng", open=False):
+                schedule_mode = gr.Radio(
+                    label="Giờ đăng", choices=["Cùng một giờ", "Mỗi website một giờ"], value="Cùng một giờ",
+                )
                 with gr.Row():
                     btn_quick_30m = gr.Button("+30 phút", size="sm")
                     btn_quick_1h = gr.Button("+1 giờ", size="sm")
@@ -459,6 +469,14 @@ def build_tab_create(db_session=None) -> dict:
                     value=default_init_time,
                     include_time=True,
                 )
+                with gr.Group(visible=False) as site_times_box:
+                    site_time_pickers = [
+                        gr.DateTime(
+                            label=f"{name} ({TZ_LABEL})", type="datetime", timezone=TZ_NAME,
+                            value=default_init_time, include_time=True,
+                        )
+                        for name in site_names
+                    ]
                 schedule_time_preview = gr.Markdown(value=format_time_preview(default_init_time))
                 schedule_btn = gr.Button("Đặt lịch", variant="primary")
                 schedule_result = gr.Markdown()
@@ -498,30 +516,25 @@ def build_tab_create(db_session=None) -> dict:
             preview_output = gr.HTML(label="Nội dung bài", visible=True, max_height=520)
             html_editor = gr.Code(label="Mã HTML", language="html", visible=False, interactive=True)
 
-    # Sự kiện chọn nhanh lịch hẹn & tương tác DateTime picker
-    btn_quick_30m.click(
-        fn=lambda: set_quick_schedule("30m"),
-        outputs=[schedule_datetime_picker, schedule_time_preview],
-    )
-    btn_quick_1h.click(
-        fn=lambda: set_quick_schedule("1h"),
-        outputs=[schedule_datetime_picker, schedule_time_preview],
-    )
-    btn_quick_2h.click(
-        fn=lambda: set_quick_schedule("2h"),
-        outputs=[schedule_datetime_picker, schedule_time_preview],
-    )
-    btn_quick_tomorrow_8am.click(
-        fn=lambda: set_quick_schedule("tomorrow_8am"),
-        outputs=[schedule_datetime_picker, schedule_time_preview],
-    )
-    btn_quick_tomorrow_14pm.click(
-        fn=lambda: set_quick_schedule("tomorrow_14pm"),
-        outputs=[schedule_datetime_picker, schedule_time_preview],
-    )
-    btn_quick_tomorrow_20pm.click(
-        fn=lambda: set_quick_schedule("tomorrow_20pm"),
-        outputs=[schedule_datetime_picker, schedule_time_preview],
+    # Sự kiện chọn nhanh lịch hẹn & tương tác DateTime picker (mốc nhanh áp cho cả giờ chung lẫn từng website)
+    quick_outputs = [schedule_datetime_picker, schedule_time_preview, *site_time_pickers]
+
+    def _quick(preset):
+        def run():
+            target, preview = set_quick_schedule(preset)
+            return (target, preview, *[target] * len(site_time_pickers))
+        return run
+
+    for btn, preset in (
+        (btn_quick_30m, "30m"), (btn_quick_1h, "1h"), (btn_quick_2h, "2h"),
+        (btn_quick_tomorrow_8am, "tomorrow_8am"), (btn_quick_tomorrow_14pm, "tomorrow_14pm"),
+        (btn_quick_tomorrow_20pm, "tomorrow_20pm"),
+    ):
+        btn.click(fn=_quick(preset), outputs=quick_outputs)
+    schedule_mode.change(
+        fn=lambda m: (gr.update(visible=(m == "Cùng một giờ")), gr.update(visible=(m != "Cùng một giờ"))),
+        inputs=[schedule_mode],
+        outputs=[schedule_datetime_picker, site_times_box],
     )
     schedule_datetime_picker.change(
         fn=format_time_preview,
@@ -581,6 +594,9 @@ def build_tab_create(db_session=None) -> dict:
         'publish_result': publish_result,
         'schedule_datetime_picker': schedule_datetime_picker,
         'schedule_btn': schedule_btn,
+        'schedule_mode': schedule_mode,
+        'site_time_pickers': site_time_pickers,
+        'site_names': site_names,
         'schedule_result': schedule_result,
         'img_optimize_chk': img_optimize_chk,
         'img_watermark_chk': img_watermark_chk,

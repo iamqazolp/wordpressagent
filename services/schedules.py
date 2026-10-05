@@ -315,3 +315,23 @@ def sync_for_job(job_id_raw, site: str) -> TaxControls:
     except Exception as e:
         logger.exception("Lỗi làm mới danh mục")
         return TaxControls.unchanged(f"❌ Lỗi làm mới danh mục: {e}")
+
+
+def schedule_post_per_site(
+    articles: dict,
+    image_paths: list[str],
+    post_status: str,
+    post_type: str,
+    times: dict[str, datetime],
+    regular_price: str = "",
+    sale_price: str = "",
+) -> list[ScheduleResult]:
+    """Hẹn giờ riêng cho từng website: mỗi website một lịch với giờ của nó. Website không có giờ bị bỏ qua."""
+    results = []
+    for site, when in times.items():
+        if site in articles and when is not None:
+            results.append(schedule_post({site: articles[site]}, image_paths, post_status, post_type, when,
+                                         regular_price, sale_price))
+    if not results:
+        raise ServiceError("Chưa có website nào được chọn giờ đăng.")
+    return results

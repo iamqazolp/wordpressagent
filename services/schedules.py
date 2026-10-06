@@ -16,6 +16,7 @@ from core import scheduler as core_scheduler
 from core.timeutil import TZ_LABEL, fmt_vn, now_vn
 from db import crud
 from db.database import session_scope
+from services import images as image_service
 from services import taxonomy as taxonomy_svc
 from services.errors import ServiceError
 from services.taxonomy import (
@@ -76,6 +77,7 @@ def schedule_post(
         )
     first = articles[next(iter(articles))]
     product_name = first.get("product_name") or first.get("title", "Sản phẩm")
+    image_paths = image_service.persist_images(image_paths or [])
 
     job_id = core_scheduler.schedule_publish_job(
         product_name=product_name,

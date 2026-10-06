@@ -3,9 +3,11 @@ core/wp_client.py
 Đăng bài lên WordPress qua REST API và upload ảnh.
 """
 from __future__ import annotations
+import concurrent.futures
 import logging
 import mimetypes
 import re
+import threading
 import unicodedata
 from pathlib import Path
 
@@ -16,6 +18,30 @@ from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wai
 from core.image_processor import process_single_image, DEFAULT_PROCESSED_DIR
 
 logger = logging.getLogger(__name__)
+
+_ORIG_GET = requests.get
+_ORIG_POST = requests.post
+
+_session: requests.Session | None = None
+_session_lock = threading.Lock()
+
+
+def get_session() -> requests.Session:
+    """
+    Trả về requests.Session dùng chung với trust_env=False (bỏ qua tra cứu WPAD proxy chậm trên Windows)
+    và kích hoạt HTTP Keep-Alive.
+    """
+    global _session
+    if _session is None:
+        with _session_lock:
+            if _session is None:
+                s = requests.Session()
+                s.trust_env = False
+                adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20)
+                s.mount("http://", adapter)
+                s.mount("https://", adapter)
+                _session = s
+    return _session
 
 
 def ascii_filename(name: str) -> str:
@@ -62,7 +88,10 @@ def check_wp_credentials(site_config: dict, timeout: int = 10) -> str | None:
         return "chưa điền WordPress Username & Application Password ở tab Quản Lý Website"
     url = site_config["url"].rstrip("/") + "/wp-json/wp/v2/users/me"
     try:
-        r = requests.get(url, auth=HTTPBasicAuth(user, pwd), timeout=timeout)
+        if requests.get is not _ORIG_GET:
+            r = requests.get(url, auth=HTTPBasicAuth(user, pwd), timeout=timeout)
+        else:
+            r = get_session().get(url, auth=HTTPBasicAuth(user, pwd), timeout=timeout)
     except Exception as e:
         return f"không kết nối được website ({type(e).__name__})"
     if r.status_code == 200:
@@ -94,7 +123,11 @@ def upload_images(
         - url:      URL công khai của ảnh sau khi upload
         - filename: Tên file gốc
     """
+    if not image_paths:
+        return []
+
     errors = errors if errors is not None else []
+    errors_lock = threading.Lock()
     base_url = site_config["url"].rstrip("/")
     # Ưu tiên Application Password để upload media
     wp_user = site_config.get("wp_user", "")
@@ -105,13 +138,14 @@ def upload_images(
         auth = HTTPBasicAuth(site_config["client_key"], site_config["client_secret"])
     endpoint = f"{base_url}/wp-json/wp/v2/media"
 
-    uploaded = []
+    session = get_session()
+    results: list[dict | None] = [None] * len(image_paths)
 
-    for path_str in image_paths:
+    def _upload_single(idx: int, path_str: str) -> None:
         path = Path(path_str)
         if not path.exists():
             logger.warning(f"File không tồn tại: {path_str}")
-            continue
+            return
 
         upload_path = path
 
@@ -159,16 +193,26 @@ def upload_images(
 
         try:
             with open(upload_path, "rb") as f:
-                response = requests.post(
-                    endpoint,
-                    auth=auth,
-                    headers={
-                        "Content-Disposition": f'attachment; filename="{ascii_filename(upload_path.name)}"',
-                        "Content-Type": mime_type,
-                    },
-                    data=f,
-                    timeout=60,
-                )
+                headers = {
+                    "Content-Disposition": f'attachment; filename="{ascii_filename(upload_path.name)}"',
+                    "Content-Type": mime_type,
+                }
+                if requests.post is not _ORIG_POST:
+                    response = requests.post(
+                        endpoint,
+                        auth=auth,
+                        headers=headers,
+                        data=f,
+                        timeout=60,
+                    )
+                else:
+                    response = session.post(
+                        endpoint,
+                        auth=auth,
+                        headers=headers,
+                        data=f,
+                        timeout=60,
+                    )
 
             if response.status_code in (200, 201):
                 data = response.json()
@@ -177,20 +221,28 @@ def upload_images(
                     "url": data["source_url"],
                     "filename": path.name,
                 }
-                uploaded.append(result)
+                results[idx] = result
                 logger.info(f"✓ Upload thành công: {path.name} → {result['url']}")
             else:
                 logger.error(
                     f"✗ Lỗi upload {path.name}: "
                     f"HTTP {response.status_code} - {response.text[:200]}"
                 )
-                errors.append(f"{path.name}: {describe_upload_error(response)}")
+                with errors_lock:
+                    errors.append(f"{path.name}: {describe_upload_error(response)}")
 
         except Exception as e:
             logger.error(f"✗ Lỗi upload {path.name}: {e}")
-            errors.append(f"{path.name}: {type(e).__name__}: {str(e)[:150]}")
+            with errors_lock:
+                errors.append(f"{path.name}: {type(e).__name__}: {str(e)[:150]}")
 
-    return uploaded
+    max_workers = min(4, len(image_paths))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(_upload_single, idx, p) for idx, p in enumerate(image_paths)]
+        for fut in futures:
+            fut.result()
+
+    return [r for r in results if r is not None]
 
 
 def build_figure_html(image_data: dict, caption: str = "") -> str:

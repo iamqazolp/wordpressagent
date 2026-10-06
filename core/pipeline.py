@@ -3,7 +3,9 @@ core/pipeline.py
 Orchestrator for running the end-to-end flow.
 """
 from __future__ import annotations
+import concurrent.futures
 import logging
+import threading
 
 from typing import Callable
 
@@ -55,9 +57,12 @@ def generate_articles(
     
     # Step 3: Generate for each site
     if randomize_enabled and total_sites > 1:
-        for idx, (site_name, site_config) in enumerate(selected_sites.items(), 1):
-            p_val = 0.35 + (0.55 * (idx / total_sites))
-            _progress(p_val, f'🤖 AI đang viết bài riêng cho {site_name} ({idx}/{total_sites})...')
+        site_items = list(enumerate(selected_sites.items(), 1))
+        progress_lock = threading.Lock()
+        completed_sites = 0
+
+        def _write_for_site(idx: int, site_name: str, site_config: dict) -> tuple[str, dict]:
+            nonlocal completed_sites
             title, raw_html = ai_writer.write_post(
                 product_name=product_name,
                 reference_contents=ref_contents,
@@ -68,7 +73,20 @@ def generate_articles(
                 total_variations=total_sites,
                 template_content=template_content,
             )
-            articles[site_name] = {'title': title, 'raw_html': raw_html}
+            with progress_lock:
+                completed_sites += 1
+                p_val = 0.35 + (0.55 * (completed_sites / total_sites))
+                _progress(p_val, f'🤖 AI đang viết bài riêng cho {site_name} ({completed_sites}/{total_sites})...')
+            return site_name, {'title': title, 'raw_html': raw_html}
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, total_sites)) as executor:
+            future_to_site = [
+                executor.submit(_write_for_site, idx, s_name, s_cfg)
+                for idx, (s_name, s_cfg) in site_items
+            ]
+            for fut in future_to_site:
+                s_name, art_dict = fut.result()
+                articles[s_name] = art_dict
     else:
         _progress(0.6, '🤖 AI đang viết bài...')
         first_site_name = list(selected_sites.keys())[0]
@@ -221,16 +239,19 @@ def publish_articles(
     Publish articles to WordPress sites.
     Returns list of result dicts.
     """
-    results = []
+    if not articles:
+        return []
+
     total = len(articles)
+    progress_lock = threading.Lock()
+    completed = 0
 
-    for i, (site_name, article_data) in enumerate(articles.items(), 1):
-        if progress_callback:
-            progress_callback(i / total, f'📤 Đang đăng lên {site_name} ({i}/{total})...')
-
-        results.append(publish_one(
+    def _publish_worker(site_name: str, article_data: dict) -> dict:
+        nonlocal completed
+        site_cfg = site_configs.get(site_name) if site_configs else None
+        res = publish_one(
             site_name,
-            site_configs.get(site_name),
+            site_cfg,
             article_data,
             image_files,
             post_type,
@@ -240,6 +261,18 @@ def publish_articles(
             optimize_images=optimize_images,
             remove_bg=remove_bg,
             apply_watermark=apply_watermark,
-        ))
+        )
+        if progress_callback:
+            with progress_lock:
+                completed += 1
+                progress_callback(completed / total, f'📤 Đang đăng lên {site_name} ({completed}/{total})...')
+        return res
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, total)) as executor:
+        future_to_site = [
+            executor.submit(_publish_worker, site_name, articles[site_name])
+            for site_name in articles.keys()
+        ]
+        results = [fut.result() for fut in future_to_site]
 
     return results

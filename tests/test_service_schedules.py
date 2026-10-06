@@ -61,6 +61,35 @@ def test_schedule_post_delegates_to_scheduler(monkeypatch):
     assert seen["site_names"] == ["s"] and seen["image_files"] == ["a.jpg"] and seen["sale_price"] == "5"
 
 
+def test_schedule_post_persists_images(tmp_path, monkeypatch):
+    from pathlib import Path
+    data = tmp_path / "data"
+    data.mkdir()
+    monkeypatch.setattr(svc.image_service, "DATA_DIR", data)
+    monkeypatch.setattr(svc.image_service, "POST_IMAGES_DIR", data / "post_images")
+
+    seen = {}
+    monkeypatch.setattr(svc.core_scheduler, "schedule_publish_job", lambda **kw: seen.update(kw) or 9)
+
+    temp_img = tmp_path / "temp_photo.png"
+    temp_img.write_bytes(b"PNGDATA")
+
+    when = now_vn() + timedelta(hours=3)
+    res = svc.schedule_post(
+        {"s": {"title": "Tiêu đề", "product_name": "SP"}},
+        [str(temp_img)],
+        "publish",
+        "product",
+        when,
+    )
+    assert res.job_id == 9
+    saved_path = seen["image_files"][0]
+    assert saved_path != str(temp_img)
+    assert saved_path.startswith(str(data / "post_images"))
+    assert Path(saved_path).read_bytes() == b"PNGDATA"
+
+
+
 def test_list_jobs_formats_rows(env):
     _, ids = env
     rows = {r.id: r for r in svc.list_jobs()}

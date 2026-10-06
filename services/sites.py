@@ -124,8 +124,15 @@ def save_site(
     Thêm mới (current_name rỗng) hoặc cập nhật website. Trả (tên_đã_lưu, created).
     Raise ServiceError khi dữ liệu sai/trùng tên/không tìm thấy. Chỉ sao chép logo sau khi dữ liệu hợp lệ.
     """
+    def normalize_url(raw_url: str) -> str:
+        url = (raw_url or "").strip().rstrip("/")
+        if not url:
+            return ""
+        if not url.startswith(("http://", "https://")):
+            url = f"https://{url}"
+        return url
     name = (name or "").strip()
-    url = (url or "").strip()
+    url = normalize_url(url)
     if not name or not url:
         raise ServiceError("Vui lòng nhập tên website và URL!")
 

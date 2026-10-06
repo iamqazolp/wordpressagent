@@ -37,3 +37,24 @@ def test_check_wp_credentials(monkeypatch):
     assert wp_client.check_wp_credentials(cfg) is None
     monkeypatch.setattr(wp_client.requests, "get", lambda *a, **k: R(401))
     assert "không hợp lệ" in wp_client.check_wp_credentials(cfg)
+
+
+def test_upload_images_webp_mime(tmp_path, monkeypatch):
+    from core import wp_client
+
+    img = tmp_path / "sample.webp"
+    img.write_bytes(b"RIFF....WEBP")
+    seen_headers = {}
+
+    class R:
+        status_code = 201
+
+        def json(self):
+            return {"id": 99, "source_url": "https://x/sample.webp"}
+
+    monkeypatch.setattr(wp_client.requests, "post", lambda url, **kw: seen_headers.update(kw.get("headers", {})) or R())
+    cfg = {"url": "https://x.test", "wp_user": "u", "wp_app_password": "p", "client_key": "", "client_secret": ""}
+    res = wp_client.upload_images([str(img)], cfg, optimize=False)
+    assert len(res) == 1
+    assert seen_headers.get("Content-Type") == "image/webp"
+

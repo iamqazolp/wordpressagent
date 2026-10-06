@@ -143,9 +143,17 @@ def upload_images(
                 logger.warning(f"Không thể tối ưu ảnh {path.name}, tiếp tục với ảnh gốc: {e}")
                 upload_path = path
 
-        mime_type, _ = mimetypes.guess_type(str(upload_path))
-        if not mime_type:
+        ext = upload_path.suffix.lower()
+        if ext == ".webp":
+            mime_type = "image/webp"
+        elif ext in (".jpg", ".jpeg"):
             mime_type = "image/jpeg"
+        elif ext == ".png":
+            mime_type = "image/png"
+        else:
+            mime_type, _ = mimetypes.guess_type(str(upload_path))
+            if not mime_type:
+                mime_type = "image/jpeg"
 
         logger.info(f"Đang upload: {upload_path.name}")
 

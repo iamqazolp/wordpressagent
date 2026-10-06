@@ -2,10 +2,13 @@
 core/searcher.py
 Tìm kiếm bài viết tham khảo trên Google qua SerpAPI (hoặc DuckDuckGo dự phòng).
 Hỗ trợ cả tìm tự động và nhập URL tay.
+Tối ưu hiệu năng: chạy song song SerpAPI + DuckDuckGo, timeout giới hạn (5s), unwrap link Translate.
 """
 from __future__ import annotations
+import concurrent.futures
 import logging
 import unicodedata
+import urllib.parse
 import httpx
 from bs4 import BeautifulSoup
 
@@ -25,6 +28,21 @@ BLOCKED_DOMAINS = [
     "threads.net",
     "wikipedia.org",
 ]
+
+
+def _unwrap_url(url: str) -> str:
+    """
+    Giải mã các URL bị bọc qua translate.google.com hoặc google.com/url.
+    Nếu không phải URL bọc, trả lại URL gốc.
+    """
+    if not url:
+        return ""
+    if "translate.google.com" in url or "google.com/url" in url:
+        parsed = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        real = parsed.get("u") or parsed.get("url") or parsed.get("q")
+        if real and real[0].startswith("http"):
+            return real[0]
+    return url
 
 
 def search_articles(product_name: str, extra_urls: list[str] | None = None) -> list[dict]:
@@ -58,28 +76,43 @@ def search_articles(product_name: str, extra_urls: list[str] | None = None) -> l
 
     limit = getattr(settings, "SEARCH_RESULT_COUNT", 5)
 
-    # 2. Tìm tự động qua SerpAPI (nếu có key)
-    if settings.SERP_API_KEY:
-        serp_results = _search_via_serpapi(product_name, limit=limit)
+    # 2. Tìm kiếm: nếu có SerpAPI key thì chạy song song SerpAPI + DuckDuckGo
+    if getattr(settings, "SERP_API_KEY", ""):
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            serp_fut = executor.submit(_search_via_serpapi, product_name, limit=limit)
+            ddg_fut = executor.submit(_search_via_duckduckgo, product_name, limit=limit)
+            serp_results = serp_fut.result()
+            ddg_results = ddg_fut.result()
+
         for r in serp_results:
             if r["url"] not in seen_urls:
                 seen_urls.add(r["url"])
                 results.append(r)
+            if len(results) >= limit:
+                break
 
-    # 3. Dự phòng qua DuckDuckGo nếu chưa đủ kết quả hoặc chưa có SerpAPI Key
-    if len(results) < limit:
-        logger.info(f"Đang tìm kiếm dự phòng qua DuckDuckGo cho '{product_name}'...")
-        ddg_results = _search_via_duckduckgo(product_name, limit=(limit - len(results)))
+        if len(results) < limit:
+            for r in ddg_results:
+                if r["url"] not in seen_urls:
+                    seen_urls.add(r["url"])
+                    results.append(r)
+                if len(results) >= limit:
+                    break
+    else:
+        logger.info(f"Đang tìm kiếm qua DuckDuckGo cho '{product_name}'...")
+        ddg_results = _search_via_duckduckgo(product_name, limit=limit)
         for r in ddg_results:
             if r["url"] not in seen_urls:
                 seen_urls.add(r["url"])
                 results.append(r)
+            if len(results) >= limit:
+                break
 
     logger.info(f"Tổng cộng {len(results)} nguồn tham khảo cho '{product_name}'")
-    return results
+    return results[:limit]
 
 
-def _search_via_serpapi(product_name: str, limit: int = 5) -> list[dict]:
+def _search_via_serpapi(product_name: str, limit: int = 5, timeout: int | None = None) -> list[dict]:
     """Gọi SerpAPI để tìm bài viết tiếng Việt trên Google."""
     try:
         from serpapi import GoogleSearch  # type: ignore
@@ -87,8 +120,10 @@ def _search_via_serpapi(product_name: str, limit: int = 5) -> list[dict]:
         logger.error("Chưa cài thư viện serpapi. Chạy: pip install google-search-results")
         return []
 
+    timeout = timeout or getattr(settings, "SERP_TIMEOUT", 5)
+
     query = f"{product_name} thông số kỹ thuật"
-    logger.info(f"🔍 Tìm kiếm Google qua SerpAPI: {query}")
+    logger.info(f"🔍 Tìm kiếm Google qua SerpAPI: {query} (timeout={timeout}s)")
 
     params = {
         'engine': 'google',
@@ -101,20 +136,21 @@ def _search_via_serpapi(product_name: str, limit: int = 5) -> list[dict]:
 
     try:
         search = GoogleSearch(params)
+        search.timeout = timeout
         data = search.get_dict()
     except Exception as e:
-        logger.error(f"Lỗi SerpAPI: {e}")
+        logger.warning(f"SerpAPI không phản hồi hoặc phản hồi quá chậm ({e}), chuyển sang nguồn khác.")
         return []
 
     results = []
     for item in data.get('organic_results', []):
-        url = item.get('link', '')
+        url = _unwrap_url(item.get('link', ''))
         title = item.get('title', url)
         if not url:
             continue
 
         url_lower = url.lower()
-        if any(bad in url_lower for bad in BLOCKED_DOMAINS):
+        if any(bad in url_lower for bad in BLOCKED_DOMAINS) or "translate.google.com" in url_lower:
             continue
 
         results.append({'url': url, 'title': title, 'source': 'google'})
@@ -154,7 +190,6 @@ def _search_via_duckduckgo(product_name: str, limit: int = 4) -> list[dict]:
             raw_href = title_elem.get("href", "")
             # DuckDuckGo có thể dùng link redirect dạng /l/?uddg=URL
             if "uddg=" in raw_href:
-                import urllib.parse
                 parsed = urllib.parse.parse_qs(urllib.parse.urlparse(raw_href).query)
                 url = parsed.get("uddg", [raw_href])[0]
             elif raw_href.startswith("http"):
@@ -165,8 +200,9 @@ def _search_via_duckduckgo(product_name: str, limit: int = 4) -> list[dict]:
             else:
                 continue
 
+            url = _unwrap_url(url)
             url_lower = url.lower()
-            if any(bad in url_lower for bad in BLOCKED_DOMAINS) or "duckduckgo.com" in url_lower:
+            if any(bad in url_lower for bad in BLOCKED_DOMAINS) or "duckduckgo.com" in url_lower or "translate.google.com" in url_lower:
                 continue
 
             title = title_elem.get_text(strip=True) or url

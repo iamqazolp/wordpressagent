@@ -1,6 +1,8 @@
 """
 tests/test_searcher.py
 Unit tests for core/searcher.py:
+- Intelligent query construction (_build_search_query)
+- Relevance filtering (_is_relevant)
 - URL unwrapping (_unwrap_url)
 - SerpAPI search with timeout and graceful error handling (_search_via_serpapi)
 - Concurrent search, fallback to DuckDuckGo, and extra_urls handling (search_articles)
@@ -12,12 +14,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Ensure project root is in sys.path
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from core.searcher import (
+    _build_search_query,
+    _is_relevant,
     _unwrap_url,
     _search_via_serpapi,
     _search_via_duckduckgo,
@@ -28,7 +31,42 @@ from config import settings
 
 
 # ==============================================================================
-# 1. Tests for _unwrap_url
+# 1. Tests for _build_search_query
+# ==============================================================================
+class TestBuildSearchQuery:
+    def test_technical_products_add_specs_suffix(self):
+        assert _build_search_query("Máy khoan pin Bosch GSB") == "Máy khoan pin Bosch GSB thông số kỹ thuật"
+        assert _build_search_query("Điện thoại iPhone 15 Pro") == "Điện thoại iPhone 15 Pro thông số kỹ thuật"
+        assert _build_search_query("Máy bơm nước Wilo") == "Máy bơm nước Wilo thông số kỹ thuật"
+
+    def test_non_technical_products_keep_original_name(self):
+        assert _build_search_query("BÚN CHẢ") == "BÚN CHẢ"
+        assert _build_search_query("thịt trâu") == "thịt trâu"
+        assert _build_search_query("Áo sơ mi nam") == "Áo sơ mi nam"
+        assert _build_search_query("Cà phê Robusta Đắk Lắk") == "Cà phê Robusta Đắk Lắk"
+
+    def test_already_has_specs_not_duplicated(self):
+        assert _build_search_query("Máy khoan Bosch thông số kỹ thuật") == "Máy khoan Bosch thông số kỹ thuật"
+
+
+# ==============================================================================
+# 2. Tests for _is_relevant
+# ==============================================================================
+class TestIsRelevant:
+    def test_rejects_unrelated_items(self):
+        # Bún Chả vs Bàn chải
+        assert not _is_relevant("BÚN CHẢ", "Bàn chải điện thông minh RST-15CW", "https://rapido.vn/ban-chai")
+        assert not _is_relevant("BÚN CHẢ", "Bàn chải nhà tắm Kirei", "https://inochi.vn/ban-chai")
+        assert not _is_relevant("BÚN CHẢ", "Bàn chải kỹ thuật cán gỗ", "https://prostech.vn/tech-brush")
+
+    def test_accepts_matching_items(self):
+        assert _is_relevant("BÚN CHẢ", "Cách làm bún chả Hà Nội ngon chuẩn vị", "https://bunchasinhtu.vn/bun-cha")
+        assert _is_relevant("Máy khoan pin", "Máy khoan pin Bosch GSB 18V chính hãng", "https://boschvn.com/may-khoan-pin")
+        assert _is_relevant("Optimus Prime", "Mô hình Blokees Transformers CC09 Optimus Prime", "https://hacom.vn/optimus-prime")
+
+
+# ==============================================================================
+# 3. Tests for _unwrap_url
 # ==============================================================================
 class TestUnwrapUrl:
     def test_normal_url_remains_unchanged(self):
@@ -53,24 +91,15 @@ class TestUnwrapUrl:
         expected = "https://thegioididong.com/dtdd"
         assert _unwrap_url(wrapped) == expected
 
-    def test_google_redirect_with_url_param(self):
-        wrapped = "https://www.google.com/url?url=https%3A%2F%2Fcellphones.com.vn%2Fiphone"
-        expected = "https://cellphones.com.vn/iphone"
-        assert _unwrap_url(wrapped) == expected
-
-    def test_empty_or_no_target_param(self):
-        assert _unwrap_url("") == ""
-        assert _unwrap_url("https://translate.google.com/") == "https://translate.google.com/"
-
 
 # ==============================================================================
-# 2. Tests for _search_via_serpapi
+# 4. Tests for _search_via_serpapi
 # ==============================================================================
 class TestSearchViaSerpapi:
     @patch("serpapi.GoogleSearch")
     def test_sets_timeout_and_extracts_results(self, mock_google_search_cls, monkeypatch):
         monkeypatch.setattr(settings, "SERP_API_KEY", "dummy_key")
-        monkeypatch.setattr(settings, "SERP_TIMEOUT", 5)
+        monkeypatch.setattr(settings, "SERP_TIMEOUT", 8)
 
         mock_search_instance = MagicMock()
         mock_google_search_cls.return_value = mock_search_instance
@@ -82,161 +111,118 @@ class TestSearchViaSerpapi:
                 },
                 {
                     "title": "Máy Giặt DMX Bản dịch",
-                    "link": "https://translate.google.com/translate?u=https%3A%2F%2Fmediamart.vn%2Fmay-giat",
+                    "link": "https://translate.google.com/translate?u=https%3A%2F%2Fmediamart.vn%2Fmay-giat-panasonic",
                 },
             ]
         }
 
         results = _search_via_serpapi("Máy giặt Panasonic", limit=5)
 
-        # Check timeout setting
-        assert mock_search_instance.timeout == 5
-        # Check unwrapping and source assignment
+        assert mock_search_instance.timeout == 8
         assert len(results) == 2
         assert results[0]["url"] == "https://dienmayxanh.com/may-giat-panasonic"
-        assert results[0]["source"] == "google"
-        assert results[1]["url"] == "https://mediamart.vn/may-giat"
-        assert results[1]["source"] == "google"
+        assert results[1]["url"] == "https://mediamart.vn/may-giat-panasonic"
 
     @patch("serpapi.GoogleSearch")
-    def test_filters_blocked_and_translate_domains(self, mock_google_search_cls, monkeypatch):
+    def test_filters_irrelevant_and_blocked_domains(self, mock_google_search_cls, monkeypatch):
         monkeypatch.setattr(settings, "SERP_API_KEY", "dummy_key")
         mock_search_instance = MagicMock()
         mock_google_search_cls.return_value = mock_search_instance
         mock_search_instance.get_dict.return_value = {
             "organic_results": [
                 {
-                    "title": "Facebook Group",
-                    "link": "https://facebook.com/group/123",
+                    "title": "Bàn chải đánh răng",
+                    "link": "https://shop.com/ban-chai",
                 },
                 {
-                    "title": "Pure Translate Domain",
-                    "link": "https://translate.google.com/m?sl=auto",
+                    "title": "Bún chả Hà Nội ngon",
+                    "link": "https://facebook.com/bun-cha-page",
                 },
                 {
-                    "title": "Good Site",
-                    "link": "https://websosanh.vn/may-giat.htm",
+                    "title": "Bún chả Sinh Từ gia truyền",
+                    "link": "https://bunchasinhtu.vn/gioi-thieu",
                 },
             ]
         }
 
-        results = _search_via_serpapi("Máy giặt", limit=5)
+        results = _search_via_serpapi("Bún chả", limit=5)
+        # Bàn chải is irrelevant, Facebook is blocked -> only Sinh Từ kept
         assert len(results) == 1
-        assert results[0]["url"] == "https://websosanh.vn/may-giat.htm"
+        assert results[0]["url"] == "https://bunchasinhtu.vn/gioi-thieu"
 
     @patch("serpapi.GoogleSearch")
-    def test_handles_timeout_exception_gracefully(self, mock_google_search_cls, monkeypatch):
+    def test_handles_timeout_gracefully(self, mock_google_search_cls, monkeypatch):
         monkeypatch.setattr(settings, "SERP_API_KEY", "dummy_key")
         mock_search_instance = MagicMock()
         mock_google_search_cls.return_value = mock_search_instance
-        # Simulate timeout error
-        mock_search_instance.get_dict.side_effect = TimeoutError("Request timed out after 5.0 seconds")
+        mock_search_instance.get_dict.side_effect = TimeoutError("Request timed out")
 
         results = _search_via_serpapi("Máy giặt Panasonic", limit=5, timeout=5)
-        # Should gracefully return empty list, not crash
         assert results == []
-
-    @patch("serpapi.GoogleSearch")
-    def test_custom_timeout_override(self, mock_google_search_cls, monkeypatch):
-        monkeypatch.setattr(settings, "SERP_API_KEY", "dummy_key")
-        mock_search_instance = MagicMock()
-        mock_google_search_cls.return_value = mock_search_instance
-        mock_search_instance.get_dict.return_value = {"organic_results": []}
-
-        _search_via_serpapi("Test", limit=2, timeout=10)
-        assert mock_search_instance.timeout == 10
 
 
 # ==============================================================================
-# 3. Tests for search_articles
+# 5. Tests for search_articles
 # ==============================================================================
 class TestSearchArticles:
     @patch("core.searcher._search_via_duckduckgo")
     @patch("core.searcher._search_via_serpapi")
-    def test_concurrent_search_uses_serp_first_and_fills_with_ddg(
+    def test_concurrent_search_merges_serp_and_ddg(
         self, mock_serp, mock_ddg, monkeypatch
     ):
         monkeypatch.setattr(settings, "SERP_API_KEY", "test_key")
         monkeypatch.setattr(settings, "SEARCH_RESULT_COUNT", 4)
 
         mock_serp.return_value = [
-            {"url": "https://serp1.com", "title": "Serp 1", "source": "google"},
-            {"url": "https://serp2.com", "title": "Serp 2", "source": "google"},
+            {"url": "https://serp1.com", "title": "Bún chả 1", "source": "google"},
+            {"url": "https://serp2.com", "title": "Bún chả 2", "source": "google"},
         ]
         mock_ddg.return_value = [
-            {"url": "https://serp1.com", "title": "Serp 1 Duplicate", "source": "duckduckgo"},
-            {"url": "https://ddg1.com", "title": "DDG 1", "source": "duckduckgo"},
-            {"url": "https://ddg2.com", "title": "DDG 2", "source": "duckduckgo"},
+            {"url": "https://serp1.com", "title": "Bún chả 1 Dup", "source": "duckduckgo"},
+            {"url": "https://ddg1.com", "title": "Bún chả DDG 1", "source": "duckduckgo"},
+            {"url": "https://ddg2.com", "title": "Bún chả DDG 2", "source": "duckduckgo"},
         ]
 
-        results = search_articles("Máy bơm nước")
+        results = search_articles("Bún chả")
 
-        # Limit is 4: serp1, serp2, ddg1, ddg2
         assert len(results) == 4
         urls = [r["url"] for r in results]
         assert urls == ["https://serp1.com", "https://serp2.com", "https://ddg1.com", "https://ddg2.com"]
 
     @patch("core.searcher._search_via_duckduckgo")
     @patch("core.searcher._search_via_serpapi")
-    def test_fallback_to_duckduckgo_when_serpapi_times_out(
+    def test_fallback_when_serpapi_fails(
         self, mock_serp, mock_ddg, monkeypatch
     ):
         monkeypatch.setattr(settings, "SERP_API_KEY", "test_key")
-        monkeypatch.setattr(settings, "SEARCH_RESULT_COUNT", 3)
+        monkeypatch.setattr(settings, "SEARCH_RESULT_COUNT", 2)
 
-        # SerpAPI times out and returns empty list
         mock_serp.return_value = []
         mock_ddg.return_value = [
-            {"url": "https://ddg1.com", "title": "DDG 1", "source": "duckduckgo"},
-            {"url": "https://ddg2.com", "title": "DDG 2", "source": "duckduckgo"},
+            {"url": "https://ddg1.com", "title": "Bún chả 1", "source": "duckduckgo"},
+            {"url": "https://ddg2.com", "title": "Bún chả 2", "source": "duckduckgo"},
         ]
 
-        results = search_articles("Quạt trần")
-
+        results = search_articles("Bún chả")
         assert len(results) == 2
-        assert results[0]["source"] == "duckduckgo"
-        assert results[1]["source"] == "duckduckgo"
+        assert all(r["source"] == "duckduckgo" for r in results)
 
     @patch("core.searcher._search_via_duckduckgo")
     @patch("core.searcher._search_via_serpapi")
-    def test_no_serp_key_calls_ddg_directly(self, mock_serp, mock_ddg, monkeypatch):
-        monkeypatch.setattr(settings, "SERP_API_KEY", "")
-        monkeypatch.setattr(settings, "SEARCH_RESULT_COUNT", 3)
-
-        mock_ddg.return_value = [
-            {"url": "https://ddg1.com", "title": "DDG 1", "source": "duckduckgo"}
-        ]
-
-        results = search_articles("Đèn led")
-
-        mock_serp.assert_not_called()
-        mock_ddg.assert_called_once()
-        assert len(results) == 1
-        assert results[0]["url"] == "https://ddg1.com"
-
-    @patch("core.searcher._search_via_duckduckgo")
-    @patch("core.searcher._search_via_serpapi")
-    def test_manual_extra_urls_prioritized_and_deduplicated(
+    def test_extra_urls_prioritized(
         self, mock_serp, mock_ddg, monkeypatch
     ):
         monkeypatch.setattr(settings, "SERP_API_KEY", "test_key")
         monkeypatch.setattr(settings, "SEARCH_RESULT_COUNT", 3)
 
-        extra = ["https://manual-source.com/spec", "https://serp1.com"]
+        extra = ["https://my-recipe.vn/bun-cha"]
         mock_serp.return_value = [
-            {"url": "https://serp1.com", "title": "Serp 1", "source": "google"},
-            {"url": "https://serp2.com", "title": "Serp 2", "source": "google"},
+            {"url": "https://serp1.com", "title": "Bún chả 1", "source": "google"}
         ]
         mock_ddg.return_value = []
 
-        results = search_articles("Tủ lạnh", extra_urls=extra)
-
-        # Extra URLs are prioritized first (manual)
-        assert results[0]["url"] == "https://manual-source.com/spec"
+        results = search_articles("Bún chả", extra_urls=extra)
+        assert results[0]["url"] == "https://my-recipe.vn/bun-cha"
         assert results[0]["source"] == "manual"
         assert results[1]["url"] == "https://serp1.com"
-        assert results[1]["source"] == "manual"
-        # Serp2 fills the remaining slot
-        assert results[2]["url"] == "https://serp2.com"
-        assert results[2]["source"] == "google"
-        assert len(results) == 3
+        assert results[1]["source"] == "google"

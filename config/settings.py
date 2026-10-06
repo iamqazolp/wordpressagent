@@ -19,7 +19,7 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
 # ── SerpAPI (tìm kiếm Google) ────────────────────────────────
 SERP_API_KEY = os.getenv("SERP_API_KEY", "")
-SERP_TIMEOUT = int(os.getenv("SERP_TIMEOUT", "5"))
+SERP_TIMEOUT = int(os.getenv("SERP_TIMEOUT", "8"))
 
 # ── Cấu hình bài viết ────────────────────────────────────────
 SEARCH_RESULT_COUNT = int(os.getenv("SEARCH_RESULT_COUNT", "5"))

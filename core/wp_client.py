@@ -11,9 +11,10 @@ import threading
 import unicodedata
 from pathlib import Path
 
+import inspect
 import requests
 from requests.auth import HTTPBasicAuth
-from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_fixed
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_fixed
 
 from core.image_processor import process_single_image, DEFAULT_PROCESSED_DIR
 
@@ -21,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 _ORIG_GET = requests.get
 _ORIG_POST = requests.post
+_ORIG_PUT = getattr(requests, "put", None)
+_ORIG_DELETE = getattr(requests, "delete", None)
 
 _session: requests.Session | None = None
 _session_lock = threading.Lock()
@@ -42,6 +45,46 @@ def get_session() -> requests.Session:
                 s.mount("https://", adapter)
                 _session = s
     return _session
+
+
+def _req_callers():
+    s = get_session()
+    s_get = requests.get if requests.get is not _ORIG_GET else s.get
+    s_post = requests.post if requests.post is not _ORIG_POST else s.post
+    s_put = requests.put if getattr(requests, "put", None) is not _ORIG_PUT else s.put
+    s_delete = requests.delete if getattr(requests, "delete", None) is not _ORIG_DELETE else s.delete
+    return s_get, s_post, s_put, s_delete
+
+
+def _safe_call(func, *args, **kwargs):
+    """Gọi HTTP callable, lọc bỏ kwargs mà func mock trong test không nhận (vd: mock fake_post không có params)."""
+    try:
+        sig = inspect.signature(func)
+        has_varkw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+        if not has_varkw:
+            kwargs = {k: v for k, v in kwargs.items() if k in sig.parameters}
+    except (ValueError, TypeError):
+        pass
+    return func(*args, **kwargs)
+
+
+def _wc_params(site_config: dict, params: dict | None = None) -> dict:
+    """Truyền consumer_key và consumer_secret qua query params cho WooCommerce REST API."""
+    p = dict(params or {})
+    if site_config.get("client_key") and site_config.get("client_secret"):
+        p["consumer_key"] = site_config["client_key"]
+        p["consumer_secret"] = site_config["client_secret"]
+    return p
+
+
+def _should_retry_http(exception: BaseException) -> bool:
+    if isinstance(exception, ValueError):
+        return False
+    if isinstance(exception, requests.exceptions.HTTPError):
+        if exception.response is not None and exception.response.status_code in (401, 403, 404):
+            return False
+    return True
+
 
 
 def ascii_filename(name: str) -> str:
@@ -319,7 +362,7 @@ def _ensure_updatable(site_config: dict, scope: str, wp_id: int | str) -> None:
         )
 
 
-@retry(stop=stop_after_attempt(2), wait=wait_fixed(3), reraise=True, retry=retry_if_not_exception_type(ValueError))
+@retry(stop=stop_after_attempt(2), wait=wait_fixed(3), reraise=True, retry=retry_if_exception(_should_retry_http))
 def publish_product(
     title: str,
     html_content: str,
@@ -388,11 +431,14 @@ def publish_product(
     else:
         logger.info(f"Đang tạo sản phẩm WooCommerce tại {base_url} (status={status})...")
 
+    wc_params = _wc_params(site_config)
+    s_get, s_post, s_put, _ = _req_callers()
+
     try:
         if existing_wp_id:
-            response = requests.put(f"{endpoint}/{existing_wp_id}", auth=auth, json=payload, timeout=30)
+            response = _safe_call(s_put, f"{endpoint}/{existing_wp_id}", auth=auth, json=payload, params=wc_params, timeout=30)
         else:
-            response = requests.post(endpoint, auth=auth, json=payload, timeout=30)
+            response = _safe_call(s_post, endpoint, auth=auth, json=payload, params=wc_params, timeout=30)
         response.raise_for_status()
     except requests.exceptions.HTTPError as e:
         logger.error(f"Lỗi HTTP khi tạo sản phẩm: {e}\n{response.text[:500]}")
@@ -417,7 +463,7 @@ def publish_product(
     }
 
 
-@retry(stop=stop_after_attempt(2), wait=wait_fixed(3), reraise=True, retry=retry_if_not_exception_type(ValueError))
+@retry(stop=stop_after_attempt(2), wait=wait_fixed(3), reraise=True, retry=retry_if_exception(_should_retry_http))
 def publish_post(
     title: str,
     html_content: str,
@@ -460,11 +506,13 @@ def publish_post(
     else:
         logger.info(f"Đang đăng bài blog lên {base_url} (status={status})...")
 
+    s_get, s_post, s_put, _ = _req_callers()
+
     try:
         if existing_wp_id:
-            response = requests.put(f"{endpoint}/{existing_wp_id}", auth=auth, json=payload, timeout=30)
+            response = _safe_call(s_put, f"{endpoint}/{existing_wp_id}", auth=auth, json=payload, timeout=30)
         else:
-            response = requests.post(endpoint, auth=auth, json=payload, timeout=30)
+            response = _safe_call(s_post, endpoint, auth=auth, json=payload, timeout=30)
         response.raise_for_status()
     except requests.exceptions.HTTPError as e:
         logger.error(f"Lỗi HTTP khi đăng bài: {e}\n{response.text[:500]}")
@@ -475,6 +523,7 @@ def publish_post(
 
     data = response.json()
     post_id  = data["id"]
+
     post_url = data["link"]
     edit_url = f"{base_url}/wp-admin/post.php?post={post_id}&action=edit"
 
@@ -528,16 +577,18 @@ def test_connection(site_config: dict) -> dict:
     auth = _get_wp_auth(site_config)
     result = {'wp_ok': False, 'wc_ok': False, 'wp_version': '', 'wc_version': '', 'message': ''}
 
+    s_get, _, _, _ = _req_callers()
+
     # Thử endpoint categories (kiểm tra WP)
     try:
-        r = requests.get(f"{base_url}/wp-json/wp/v2/categories", timeout=10)
+        r = _safe_call(s_get, f"{base_url}/wp-json/wp/v2/categories", timeout=10)
         if r.status_code == 200:
             logger.info(f"✓ Kết nối WP REST API thành công tới {base_url}")
             result['wp_ok'] = True
             # Thử lấy version nếu có auth
             wp_user = site_config.get("wp_user", "")
             if wp_user:
-                r2 = requests.get(f"{base_url}/wp-json/wp/v2/users/me", auth=auth, timeout=10)
+                r2 = _safe_call(s_get, f"{base_url}/wp-json/wp/v2/users/me", auth=auth, timeout=10)
                 if r2.status_code == 200:
                     logger.info("✓ Xác thực WP Application Password thành công!")
         else:
@@ -549,8 +600,9 @@ def test_connection(site_config: dict) -> dict:
 
     # Thử endpoint WooCommerce
     wc_auth = HTTPBasicAuth(site_config["client_key"], site_config["client_secret"])
+    wc_params = _wc_params(site_config)
     try:
-        r_wc = requests.get(f"{base_url}/wp-json/wc/v3/", auth=wc_auth, timeout=10)
+        r_wc = _safe_call(s_get, f"{base_url}/wp-json/wc/v3/", auth=wc_auth, params=wc_params, timeout=10)
         if r_wc.status_code == 200:
             data = r_wc.json()
             result['wc_ok'] = True
@@ -582,8 +634,9 @@ def get_categories(site_config: dict) -> list[dict]:
     auth = _get_wp_auth(site_config)
     endpoint = f"{base_url}/wp-json/wp/v2/categories?per_page=100"
 
+    s_get, _, _, _ = _req_callers()
     try:
-        response = requests.get(endpoint, auth=auth, timeout=10)
+        response = _safe_call(s_get, endpoint, auth=auth, timeout=10)
         response.raise_for_status()
         cats = response.json()
         return [{"id": c["id"], "name": c["name"]} for c in cats]
@@ -623,10 +676,15 @@ def fetch_categories(site_config: dict, scope: str, per_page: int = 100, max_pag
     url, auth = _taxonomy_url_and_auth(site_config, "categories", scope)
     result: list[dict] = []
     page = 1
+    s_get, _, _, _ = _req_callers()
     while page <= max_pages:
-        response = requests.get(
+        params: dict = {"per_page": per_page, "page": page, "hide_empty": "false"}
+        if _is_product_scope(scope):
+            params = _wc_params(site_config, params)
+        response = _safe_call(
+            s_get,
             url, auth=auth, timeout=15,
-            params={"per_page": per_page, "page": page, "hide_empty": "false"},
+            params=params,
         )
         if response.status_code == 400 and page > 1:
             break  # WP trả 400 rest_post_invalid_page_number khi vượt trang cuối
@@ -665,6 +723,7 @@ def ensure_tags(site_config: dict, scope: str, names: list[str]) -> list[int]:
     url, auth = _taxonomy_url_and_auth(site_config, "tags", scope)
     ids: list[int] = []
     seen_names: set[str] = set()
+    s_get, s_post, _, _ = _req_callers()
     for raw in names:
         name = re.sub(r"\s+", " ", (raw or "")).strip()
         key = _norm_name(name)
@@ -672,13 +731,25 @@ def ensure_tags(site_config: dict, scope: str, names: list[str]) -> list[int]:
             continue
         seen_names.add(key)
         try:
-            found = requests.get(url, auth=auth, timeout=15, params={"search": name, "per_page": 100})
+            get_params: dict = {"search": name, "per_page": 100}
+            post_params: dict = {}
+            if _is_product_scope(scope):
+                get_params = _wc_params(site_config, get_params)
+                post_params = _wc_params(site_config, post_params)
+
+            found = _safe_call(s_get, url, auth=auth, timeout=15, params=get_params)
+            if found.status_code in (401, 403):
+                logger.warning(f"Dừng kiểm tra tag do lỗi xác thực HTTP {found.status_code} tại {url}")
+                break
             found.raise_for_status()
             match = next((t for t in found.json() if _norm_name(_html_unescape(t.get("name", ""))) == key), None)
             if match:
                 tag_id = match["id"]
             else:
-                created = requests.post(url, auth=auth, json={"name": name}, timeout=15)
+                created = _safe_call(s_post, url, auth=auth, json={"name": name}, params=post_params or None, timeout=15)
+                if created.status_code in (401, 403):
+                    logger.warning(f"Dừng kiểm tra tag do lỗi xác thực HTTP {created.status_code} tại {url}")
+                    break
                 if created.status_code == 400:
                     # Tag đã tồn tại (khác cách viết/slug): WP trả id trong data
                     data = (created.json() or {}).get("data", {}) or {}
@@ -690,6 +761,11 @@ def ensure_tags(site_config: dict, scope: str, names: list[str]) -> list[int]:
                     tag_id = created.json()["id"]
             if tag_id not in ids:
                 ids.append(int(tag_id))
+        except requests.exceptions.HTTPError as e:
+            if e.response is not None and e.response.status_code in (401, 403):
+                logger.warning(f"Dừng kiểm tra tag do lỗi xác thực HTTP {e.response.status_code} tại {url}: {e}")
+                break
+            logger.warning(f"Bỏ qua tag '{name}': {e}")
         except Exception as e:
             logger.warning(f"Bỏ qua tag '{name}': {e}")
     return ids
@@ -742,7 +818,10 @@ def list_items(
     params: dict = {"per_page": per_page, "page": page, "status": status, "orderby": "date", "order": "desc"}
     if search:
         params["search"] = search
-    response = requests.get(url, auth=auth, params=params, timeout=20)
+    if _is_product_scope(scope):
+        params = _wc_params(site_config, params)
+    s_get, _, _, _ = _req_callers()
+    response = _safe_call(s_get, url, auth=auth, params=params, timeout=20)
     response.raise_for_status()
     batch = response.json()
     if not isinstance(batch, list):
@@ -754,7 +833,9 @@ def list_items(
 def get_item(site_config: dict, scope: str, wp_id: int | str) -> dict | None:
     """CHỈ ĐỌC. Lấy 1 sản phẩm/bài theo id; None nếu không còn (404). Lỗi khác thì raise."""
     url, auth = _items_url_and_auth(site_config, scope)
-    response = requests.get(f"{url}/{wp_id}", auth=auth, timeout=20)
+    params = _wc_params(site_config) if _is_product_scope(scope) else None
+    s_get, _, _, _ = _req_callers()
+    response = _safe_call(s_get, f"{url}/{wp_id}", auth=auth, params=params, timeout=20)
     if response.status_code == 404:
         return None
     response.raise_for_status()
@@ -767,7 +848,11 @@ def trash_item(site_config: dict, scope: str, wp_id: int | str) -> dict:
     Cố ý KHÔNG có tham số `force`: module này không bao giờ xóa vĩnh viễn.
     """
     url, auth = _items_url_and_auth(site_config, scope)
-    response = requests.delete(f"{url}/{wp_id}", auth=auth, params={"force": "false"}, timeout=30)
+    params: dict = {"force": "false"}
+    if _is_product_scope(scope):
+        params = _wc_params(site_config, params)
+    _, _, _, s_delete = _req_callers()
+    response = _safe_call(s_delete, f"{url}/{wp_id}", auth=auth, params=params, timeout=30)
     response.raise_for_status()
     item = _normalize_item(response.json(), scope)
     item["status"] = item["status"] or "trash"

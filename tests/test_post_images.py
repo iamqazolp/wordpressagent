@@ -50,5 +50,7 @@ def test_extract_gallery_paths_and_merge():
 def test_final_images_semantics():
     assert tab_history._final_images(tab_history._UNSET, None) is None
     assert tab_history._final_images(tab_history._UNSET, ["/n.jpg"]) == ["/n.jpg"]
-    assert tab_history._final_images(None, None) == []          # xoá hết ảnh trong album
+    assert tab_history._final_images(None, None) is None
+    assert tab_history._final_images([], None) == []          # xoá hết ảnh trong album
     assert tab_history._final_images([("/a.jpg", None)], ["/n.jpg"]) == ["/a.jpg", "/n.jpg"]
+

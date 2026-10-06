@@ -1,5 +1,3 @@
-
-
 def test_upload_images_reports_reason_on_401(tmp_path, monkeypatch):
     from core import wp_client
 
@@ -58,3 +56,69 @@ def test_upload_images_webp_mime(tmp_path, monkeypatch):
     assert len(res) == 1
     assert seen_headers.get("Content-Type") == "image/webp"
 
+def test_should_retry_http():
+    from core.wp_client import _should_retry_http
+    import requests
+
+    assert not _should_retry_http(ValueError("invalid price"))
+
+    class FakeErr(requests.exceptions.HTTPError):
+        def __init__(self, code):
+            super().__init__()
+            self.response = type("Resp", (), {"status_code": code})()
+
+    assert not _should_retry_http(FakeErr(401))
+    assert not _should_retry_http(FakeErr(403))
+    assert not _should_retry_http(FakeErr(404))
+    assert _should_retry_http(FakeErr(500))
+    assert _should_retry_http(requests.exceptions.ConnectionError("network err"))
+
+
+def test_ensure_tags_stops_on_401_or_403(monkeypatch):
+    from core import wp_client
+    import requests
+
+    calls = []
+
+    class R:
+        status_code = 401
+        text = "Unauthorized"
+
+        def raise_for_status(self):
+            raise requests.exceptions.HTTPError("401", response=self)
+
+    def fake_get(url, **kw):
+        calls.append(url)
+        return R()
+
+    monkeypatch.setattr(wp_client.requests, "get", fake_get)
+    cfg = {"url": "https://x.test", "client_key": "ck", "client_secret": "cs", "wp_user": "u", "wp_app_password": "p"}
+    res = wp_client.ensure_tags(cfg, "product", ["tag1", "tag2", "tag3"])
+    assert res == []
+    assert len(calls) == 1
+
+
+def test_publish_product_passes_query_param_auth(monkeypatch):
+    from core import wp_client
+
+    captured_params = {}
+
+    class FakeResp:
+        status_code = 201
+        text = '{"id": 1, "permalink": "https://x/p/1"}'
+
+        def json(self):
+            return {"id": 1, "permalink": "https://x/p/1"}
+
+        def raise_for_status(self):
+            pass
+
+    def fake_post(url, **kwargs):
+        captured_params.update(kwargs.get("params", {}))
+        return FakeResp()
+
+    monkeypatch.setattr(wp_client.requests, "post", fake_post)
+    cfg = {"url": "https://x.test", "client_key": "my_ck", "client_secret": "my_cs"}
+    wp_client.publish_product("Product", "<p>x</p>", [], cfg)
+    assert captured_params.get("consumer_key") == "my_ck"
+    assert captured_params.get("consumer_secret") == "my_cs"

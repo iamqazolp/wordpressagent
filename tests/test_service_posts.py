@@ -255,3 +255,13 @@ def test_history_select_warns_about_processed_images(world, tmp_path, monkeypatc
     svc.save_post_edits(h1, "t", "", "", "", "<p>x</p>", [str(baked)])
     info = ui.on_select_history_post(f"#{h1} - t")[8]
     assert "_optimized" in info and "watermark" in info
+
+def test_publish_saved_batch_parallel(world):
+    (h1, h2), calls, img = world
+    items = svc.publish_saved_batch([h1, 9999, h2], "draft")
+    assert len(items) == 3
+    assert items[0].post_id == h1 and items[0].ok is True and items[0].site_name == "shop"
+    assert items[1].post_id == 9999 and items[1].ok is False and items[1].detail == "Không tìm thấy bài"
+    assert items[2].post_id == h2 and items[2].ok is True
+    d1 = svc.get_post(h1)
+    assert d1.status == "draft" and d1.wp_post_url.endswith("p=99")

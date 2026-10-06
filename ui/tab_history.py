@@ -116,7 +116,10 @@ def _final_images(gallery_images, new_images_input) -> list[str] | None:
     """
     if gallery_images is _UNSET:
         return extract_file_paths(new_images_input) or None
+    if gallery_images is None and not extract_file_paths(new_images_input):
+        return None
     return merge_image_selection(gallery_images, new_images_input)
+
 
 
 def on_select_history_post(choice_str: str) -> tuple:

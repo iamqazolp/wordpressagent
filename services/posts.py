@@ -6,6 +6,8 @@ core.pipeline.publish_one với luồng "Tạo & Đăng bài" để hành vi (�
 """
 from __future__ import annotations
 
+import concurrent.futures
+
 import json
 from collections.abc import Collection
 from dataclasses import dataclass
@@ -296,23 +298,119 @@ class BatchItem:
 
 def publish_saved_batch(post_ids: list[int], post_status: str) -> list[BatchItem]:
     """Đăng ngay từng bài đã lưu (nội dung/ảnh/danh mục như đã lưu, xử lý ảnh mặc định). Một bài lỗi không chặn các bài khác."""
+    if not post_ids:
+        return []
+
+    # Bước 1: Đọc thông tin bài viết và cấu hình website trên luồng chính
+    with session_scope() as db:
+        tasks_data = []
+        for pid in post_ids:
+            h = crud.get_post_history_by_id(db, pid)
+            if not h or not h.site:
+                tasks_data.append({"pid": pid, "found": False})
+                continue
+            site_cfg = crud.get_site_config(db, h.site_id)
+            tasks_data.append({
+                "pid": pid,
+                "found": True,
+                "site_name": h.site.name,
+                "site_cfg": site_cfg,
+                "product_name": h.product_name or "",
+                "title": (h.title or h.product_name or "").strip(),
+                "short_desc": (h.short_description or "").strip(),
+                "reg_price": (h.regular_price or "").strip(),
+                "sale_price": (h.sale_price or "").strip(),
+                "raw_html": h.raw_html or "",
+                "post_type": h.post_type,
+                "wp_post_id": (h.wp_post_id or "").strip(),
+                "image_paths": [p for p in _image_paths(h) if Path(p).exists()],
+                "category_ids": taxonomy_svc.normalize_category_ids(taxonomy_svc.loads_list(h.category_ids_json)),
+                "category_scope": taxonomy_svc.scope_of(h.post_type),
+                "tags": [str(t) for t in taxonomy_svc.loads_list(h.tags_json)],
+            })
+
+    # Bước 2: Đăng song song qua ThreadPoolExecutor (không truy cập DB trong worker thread)
+    def _worker(t: dict) -> dict:
+        pid = t["pid"]
+        if not t.get("found"):
+            return {"pid": pid, "res": None, "error": "Không tìm thấy bài"}
+        if not t.get("site_cfg"):
+            return {"pid": pid, "res": None, "error": "Không tìm thấy thông tin xác thực của website!"}
+        try:
+            article = {
+                "title": t["title"],
+                "raw_html": t["raw_html"],
+                "short_description": t["short_desc"],
+                "category_ids": t["category_ids"],
+                "category_scope": t["category_scope"],
+                "tags": t["tags"],
+            }
+            res = pipeline.publish_one(
+                site_name=t["site_name"],
+                site_config=t["site_cfg"],
+                article_data=article,
+                image_paths=t["image_paths"],
+                post_type=t["post_type"],
+                post_status=post_status,
+                regular_price=t["reg_price"],
+                sale_price=t["sale_price"],
+                existing_wp_id=None,
+                optimize_images=True,
+                apply_watermark=True,
+                remove_bg=False,
+            )
+            if not res.get("success"):
+                return {"pid": pid, "res": res, "error": res.get("error") or "Lỗi không xác định"}
+            return {"pid": pid, "res": res, "error": None}
+        except Exception as e:
+            return {"pid": pid, "res": None, "error": str(e)}
+
+    max_workers = min(4, len(tasks_data)) if tasks_data else 1
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        published_results = list(executor.map(_worker, tasks_data))
+
+    # Bước 3: Cập nhật SQLite trên luồng chính trong một transaction duy nhất
+    with session_scope() as db:
+        for t, out_dict in zip(tasks_data, published_results):
+            if not t.get("found"):
+                continue
+            res = out_dict.get("res")
+            if out_dict.get("error") or not res or not res.get("success"):
+                continue
+            h = crud.get_post_history_by_id(db, t["pid"])
+            if h:
+                h.title = t["title"]
+                h.raw_html = t["raw_html"]
+                h.short_description = t["short_desc"]
+                h.regular_price = t["reg_price"]
+                h.sale_price = t["sale_price"]
+                h.status = "published" if post_status == "publish" else "draft"
+                h.wp_post_id = str(res.get("post_id", ""))
+                h.wp_post_url = res.get("post_url")
+                h.published_at = now_vn()
+                h.error_message = None
+        db.commit()
+
+    # Bước 4: Trả về kết quả đúng theo thứ tự ban đầu của post_ids
     out: list[BatchItem] = []
-    for pid in post_ids:
-        d = get_post(pid)
-        if not d:
+    for t, out_dict in zip(tasks_data, published_results):
+        pid = t["pid"]
+        if not t.get("found"):
             out.append(BatchItem(pid, "?", "?", False, "Không tìm thấy bài"))
             continue
-        try:
-            res = publish_saved_post(
-                pid, d.title, d.short_description, d.regular_price, d.sale_price, d.raw_html,
-                d.post_type, post_status,
-            )
-            note = res.post_url + (f" ⚠️ {res.image_warning}" if res.image_warning else "")
-            out.append(BatchItem(pid, d.product_name, d.site_name, True, note))
-        except (ServiceError, PublishError) as e:
-            out.append(BatchItem(pid, d.product_name, d.site_name, False, e.message))
-        except Exception as e:
-            out.append(BatchItem(pid, d.product_name, d.site_name, False, str(e)))
+        err = out_dict.get("error")
+        res = out_dict.get("res")
+        prod_name = t.get("product_name") or "?"
+        site_name = t.get("site_name") or "?"
+        if err or not res or not res.get("success"):
+            error_msg = err or (res.get("error") if res else "Lỗi không xác định")
+            out.append(BatchItem(pid, prod_name, site_name, False, error_msg))
+        else:
+            post_url = res.get("post_url") or ""
+            img_warn = res.get("image_warning")
+            note = post_url + (f" ⚠️ {img_warn}" if img_warn else "")
+            out.append(BatchItem(pid, prod_name, site_name, True, note))
+
     return out
 
 

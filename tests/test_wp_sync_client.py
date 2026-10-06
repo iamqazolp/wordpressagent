@@ -104,7 +104,7 @@ def test_trash_item_never_forces(calls):
     for scope in ("product", "post"):
         item = wp_client.trash_item(CFG, scope, 8)
         method, url, kw = log[-1]
-        assert method == "DELETE" and url.endswith("/8") and kw["params"] == {"force": "false"}
+        assert method == "DELETE" and url.endswith("/8") and kw["params"].get("force") == "false"
         assert item["status"] == "trash"
     assert "force" not in inspect.signature(wp_client.trash_item).parameters
 

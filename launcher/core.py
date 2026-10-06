@@ -170,8 +170,6 @@ def install(root: Path, log: Log, python: str | None = None) -> None:
     run_logged([py, "-m", "pip", "install", "--upgrade", "pip", "-q"], root, log, env)
     if run_logged([py, "-m", "pip", "install", "-r", "requirements.txt"], root, log, env) != 0:
         raise LauncherError("Cài thư viện thất bại. Kiểm tra kết nối mạng rồi bấm thử lại.")
-    log("Đang tối ưu để lần mở đầu tiên nhanh hơn (1–2 phút)...")
-    run_logged([py, "-m", "compileall", "-q", "-j", "0", str(root / ".venv")], root, lambda _l: None, env)
     _stamp_path(root).write_text(requirements_stamp(root), encoding="utf-8")
     log("✓ Cài đặt xong.")
 

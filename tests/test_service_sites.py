@@ -151,3 +151,18 @@ def test_ui_test_connection_messages(monkeypatch):
     monkeypatch.setattr(wp_client, "test_connection", lambda cfg: {"wc_ok": False, "wp_ok": False})
     msg = ui.handle_test_connection_ui("https://x", "k", "s", "", "")
     assert msg.startswith("❌ Không thể kết nối WooCommerce") and "Chưa có Application Password" in msg
+
+
+def test_normalize_url():
+    assert svc.normalize_url("example.com") == "https://example.com"
+    assert svc.normalize_url("http://example.com/") == "http://example.com"
+    assert svc.normalize_url("https://example.com///") == "https://example.com"
+    assert svc.normalize_url("") == ""
+    assert svc.normalize_url("   ") == ""
+
+
+def test_connection_normalizes_bare_url(monkeypatch):
+    called_cfg = {}
+    monkeypatch.setattr(wp_client, "test_connection", lambda cfg: called_cfg.update(cfg) or {"wc_ok": True})
+    svc.test_connection("khodentrangtri.com", "ck_test", "cs_test")
+    assert called_cfg["url"] == "https://khodentrangtri.com"

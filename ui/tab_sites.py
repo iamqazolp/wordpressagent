@@ -161,7 +161,7 @@ def handle_test_connection_ui(url: str, client_key: str, client_secret: str, wp_
         else:
             wp_info = "\n❌ WordPress Application Password: Xác thực thất bại"
     else:
-        wp_info = "\n⚠️ Chưa có Application Password (vẫn đăng được WooCommerce Sản phẩm, chỉ chưa đăng được Blog Post)."
+        wp_info = "\n⚠️ Chưa có Application Password (chỉ đăng được sản phẩm không có ảnh; cần Application Password để tải ảnh sản phẩm và bài viết)."
 
     if res.wc_ok:
         return f"✅ Kết nối WooCommerce thành công tới {url}!{wp_info}"

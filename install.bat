@@ -38,6 +38,7 @@ if not exist ".venv\Scripts\python.exe" (
 echo Dang cai thu vien (vai phut o lan dau)...
 ".venv\Scripts\python.exe" -m pip install -r requirements.txt
 if errorlevel 1 ( echo [X] Cai thu vien that bai. Kiem tra ket noi mang roi chay lai. & pause & exit /b 1 )
+".venv\Scripts\python.exe" -c "from launcher.core import requirements_stamp, _stamp_path; from pathlib import Path; p = Path('.'); _stamp_path(p).write_text(requirements_stamp(p), encoding='utf-8')"
 
 echo.
 echo [OK] Cai dat xong.

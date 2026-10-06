@@ -7,7 +7,12 @@ Sau đó mở trình duyệt: http://localhost:7860
 from __future__ import annotations
 
 import logging
+import os
 import sys
+
+# Tắt telemetry của Gradio và Hugging Face để tránh delay mạng lúc khởi động
+os.environ.setdefault("GRADIO_ANALYTICS_ENABLED", "False")
+os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 
 from dotenv import load_dotenv
 

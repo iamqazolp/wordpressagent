@@ -7,6 +7,7 @@ Kiểm tra kết nối website KHÔNG chạy khi mở trang (chỉ hiện kết 
 from __future__ import annotations
 
 import logging
+import time
 
 import gradio as gr
 import pandas as pd
@@ -26,10 +27,18 @@ _SITE_COLS = ["Website", "Tổng", "Đã đăng", "Đã lưu", "Lỗi"]
 _RECENT_COLS = ["ID", "Tiêu đề", "Website", "Trạng thái", "Ngày tạo (GMT+7)", "Xem bài", "Sửa trong WP"]
 _HEALTH_COLS = ["Website", "WordPress", "WooCommerce", "Ghi chú", "Kiểm tra lúc (GMT+7)"]
 
+_cached_stats: tuple[float, dash_service.DashboardStats | None] | None = None
+
 
 def _stats() -> dash_service.DashboardStats | None:
+    global _cached_stats
+    now = time.time()
+    if _cached_stats is not None and (now - _cached_stats[0]) < 10.0:
+        return _cached_stats[1]
     try:
-        return dash_service.get_stats(days=DAYS)
+        res = dash_service.get_stats(days=DAYS)
+        _cached_stats = (now, res)
+        return res
     except Exception:
         logger.exception("Lỗi tải thống kê dashboard")
         return None
@@ -119,6 +128,8 @@ def check_health(force: bool = True) -> tuple[pd.DataFrame, str]:
 
 
 def refresh_all():
+    global _cached_stats
+    _cached_stats = None
     return cards_markdown(), daily_dataframe(), site_dataframe(), recent_dataframe()
 
 

@@ -22,6 +22,7 @@ STATE=$("$PY" tools/init_env.py || true)
 .venv/bin/python -m pip install --upgrade pip -q
 echo "⏳ Đang cài thư viện (vài phút ở lần đầu)..."
 .venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -c "from launcher.core import requirements_stamp, _stamp_path; from pathlib import Path; p = Path('.'); _stamp_path(p).write_text(requirements_stamp(p), encoding='utf-8')"
 
 echo
 echo "✓ Cài đặt xong."

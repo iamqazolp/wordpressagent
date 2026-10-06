@@ -48,6 +48,16 @@ def safe_filename(name: str) -> str:
     return clean or "site"
 
 
+def normalize_url(raw_url: str) -> str:
+    """Chuẩn hóa URL website: bỏ khoảng trắng, trailing slash, tự động thêm https:// nếu thiếu scheme."""
+    url = (raw_url or "").strip().rstrip("/")
+    if not url:
+        return ""
+    if not url.startswith(("http://", "https://")):
+        url = f"https://{url}"
+    return url
+
+
 def _existing_logo(path: str | None) -> str:
     return path if (path and Path(path).exists()) else ""
 
@@ -124,13 +134,6 @@ def save_site(
     Thêm mới (current_name rỗng) hoặc cập nhật website. Trả (tên_đã_lưu, created).
     Raise ServiceError khi dữ liệu sai/trùng tên/không tìm thấy. Chỉ sao chép logo sau khi dữ liệu hợp lệ.
     """
-    def normalize_url(raw_url: str) -> str:
-        url = (raw_url or "").strip().rstrip("/")
-        if not url:
-            return ""
-        if not url.startswith(("http://", "https://")):
-            url = f"https://{url}"
-        return url
     name = (name or "").strip()
     url = normalize_url(url)
     if not name or not url:
@@ -207,6 +210,7 @@ def clear_watermark(name: str) -> None:
 
 def test_connection(url: str, client_key: str, client_secret: str, wp_user: str = "", wp_password: str = "") -> ConnectionResult:
     """Kiểm tra kết nối bằng thông tin đang nhập (chưa cần lưu)."""
+    url = normalize_url(url)
     if not url or not client_key or not client_secret:
         raise ServiceError("Vui lòng điền đủ URL, WooCommerce Client Key và Client Secret trước khi kiểm tra!")
     res = wp_client.test_connection({

@@ -2,6 +2,8 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 set PYTHONUTF8=1
+set GRADIO_ANALYTICS_ENABLED=False
+set HF_HUB_DISABLE_TELEMETRY=1
 if not exist ".venv\Scripts\python.exe" call install.bat
 if not exist ".venv\Scripts\python.exe" exit /b 1
 ".venv\Scripts\python.exe" app.py

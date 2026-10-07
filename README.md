@@ -28,7 +28,7 @@ Dữ liệu và khoá API nằm trên máy của bạn, không qua máy chủ tr
 |---|---|
 | **AI viết bài chuẩn SEO** | Bảng thông số, ưu điểm, mô tả ngắn theo ghi chú của bạn. Có điểm SEO tham khảo, không chặn đăng. |
 | **Đa website** | Đăng nhiều website cùng lúc, mỗi site một bản nội dung khác nhau. |
-| **Hẹn giờ linh hoạt** | Cùng một giờ hoặc mỗi website một giờ. Hàng loạt có thể giãn cách giữa các bài và các website. |
+| **Hẹn giờ linh hoạt** | Cùng một giờ hoặc mỗi website một giờ. Hàng loạt có thể giãn cách giữa các bài và các website. Lịch đăng công khai được đặt sẵn trên WordPress nên vẫn lên đúng giờ dù đã tắt ứng dụng. |
 | **Tạo hàng loạt** | Nhập CSV / Excel, tạo nhiều bài, rồi chọn bài nào đăng, bài nào hẹn giờ. |
 | **Kho bài viết** | Lưu nháp, sửa, đăng lại, cập nhật đúng bài đã đăng, chọn nhiều bài để đăng / hẹn giờ / xoá. |
 | **Danh mục và tag** | AI gợi ý danh mục có thật trên website, sửa tay được ở mọi bước. |
@@ -66,10 +66,10 @@ Dữ liệu và khoá API nằm trên máy của bạn, không qua máy chủ tr
 1. Giải nén `wordpress-agent-x.y.z.zip` vào một thư mục cố định, ví dụ `C:\WordPressAgent`.
 2. **Bấm đúp `WordPressAgent.pyw`**. Nếu máy không mở được, bấm đúp `Mo-ung-dung.bat`.
 3. Cửa sổ khởi động tự làm các việc sau:
-   - Lần đầu: cài thư viện (vài phút, có thanh tiến trình, không có cửa sổ đen).
+   - Lần đầu: cài thư viện (khoảng 1 đến vài phút tuỳ tốc độ mạng, có thanh tiến trình, không có cửa sổ đen). Nếu cách cài nhanh gặp lỗi, ứng dụng tự chuyển sang cách cài thông thường.
    - Hỏi **khoá Gemini API** và tự ghi vào `.env`. Đổi khoá bất cứ lúc nào bằng nút **Khoá API**.
    - Khởi động ứng dụng và mở trình duyệt tại <http://127.0.0.1:7860>.
-4. Lần đầu khởi động có thể mất 1 đến 3 phút. Cửa sổ hiện tiến độ, vui lòng không tắt.
+4. Lần mở đầu tiên sau khi cài có thể mất thêm chừng 15 đến 60 giây (Windows Defender quét các file mới). Cửa sổ hiện tiến độ, vui lòng không tắt. Các lần sau mở chỉ vài giây.
 
 Các nút trong cửa sổ: **Mở trình duyệt**, **Dừng ứng dụng**, **Khởi động lại**, **Khoá API**, **Sao lưu**, **Nhật ký**. Thu nhỏ cửa sổ khi đang dùng, đừng đóng. Muốn tắt, bấm **Dừng ứng dụng** hoặc nút **Tắt ứng dụng** ở đầu trang web (chỉ hoạt động từ chính máy chạy ứng dụng).
 
@@ -117,6 +117,11 @@ Bấm **Kiểm tra kết nối** rồi **Lưu**. Mật khẩu và khoá được
 
 Sau khi đăng, kết quả báo riêng từng website. Website thiếu ảnh hoặc lỗi WordPress profile được cảnh báo rõ kèm lý do.
 
+**Hẹn giờ hoạt động thế nào:**
+
+- **Đăng dạng `publish`:** bài được tạo ngay trên WordPress ở trạng thái *đã lên lịch* (`future`), WordPress tự đăng đúng giờ, kể cả khi bạn đã tắt ứng dụng. Vì vậy bấm *Đặt lịch* sẽ mất thời gian như khi đăng (tải ảnh lên). Website nào lỗi lúc đặt lịch được cảnh báo ngay và ứng dụng sẽ thử đăng lại khi tới giờ.
+- **Đăng dạng `draft`:** chưa gửi gì lên WordPress; tới giờ ứng dụng mới đăng bài ở dạng nháp.
+
 ### Tạo hàng loạt
 
 1. Tải file `.csv` hoặc `.xlsx` với các cột: `product_name` (bắt buộc), `ref_urls`, `notes`, `regular_price`, `sale_price`. File mẫu nằm trong `samples/`.
@@ -126,15 +131,20 @@ Sau khi đăng, kết quả báo riêng từng website. Website thiếu ảnh ho
 ### Kho bài viết
 
 - Sửa nội dung, giá, ảnh, rồi **Đăng lên website** hoặc **Cập nhật bài WP** (ghi đè đúng bài đã đăng, không tạo bản trùng).
+- Bài đang chờ lịch hẹn hiển thị trạng thái **⏰ Đã hẹn giờ**; có bộ lọc riêng.
 - **Chọn nhiều bài**: đăng, hẹn giờ hoặc xoá hàng loạt (xoá cần tick xác nhận).
 - **Đồng bộ với WordPress**: kiểm tra trùng, liên kết với bài có sẵn, làm mới trạng thái, chuyển bài vào thùng rác WordPress (khôi phục được trong wp-admin, không xoá vĩnh viễn).
 - **Xoá** chỉ xoá bản ghi trong ứng dụng, không động tới website.
 
 ### Lịch đăng
 
-Theo dõi các lịch hẹn, sửa danh mục và tag của lịch còn chờ. **Huỷ lịch** dừng lịch nhưng giữ bản ghi để xem lại. **Xoá khỏi danh sách** dừng lịch và xoá hẳn bản ghi. Có thể chọn nhiều lịch để huỷ hoặc xoá cùng lúc.
+Theo dõi các lịch hẹn, sửa danh mục và tag của lịch còn chờ (bài đã đặt sẵn trên WordPress được cập nhật luôn). Có thể chọn nhiều lịch để huỷ hoặc xoá cùng lúc.
 
-> **Lịch hẹn chỉ chạy khi ứng dụng đang mở.** Tắt máy hoặc tắt ứng dụng đúng giờ hẹn thì bài sẽ không được đăng.
+- **Huỷ lịch** (chỉ với lịch đang chờ): dừng lịch, giữ bản ghi để xem lại. Bài đã đặt sẵn trên WordPress được chuyển về **bản nháp** để không tự đăng. Nếu không kết nối được website, lịch được giữ nguyên và báo lỗi để bạn thử lại.
+- **Xoá khỏi danh sách:** với lịch đang chờ, huỷ như trên rồi đưa bài đã đặt sẵn vào **thùng rác WordPress** (khôi phục được). Với lịch đã chạy xong hoặc đã huỷ, **chỉ xoá bản ghi**, không động tới bài trên website.
+- Khi tới giờ, ứng dụng kiểm tra bài đã lên chưa. Website nhỏ ít người truy cập hay bị WordPress đăng trễ (WP-Cron), khi đó ứng dụng tự chuyển bài sang công khai.
+
+> Lịch đăng dạng `publish` vẫn lên đúng giờ khi ứng dụng tắt. Lịch dạng `draft`, hoặc website bị lỗi lúc đặt lịch, **cần ứng dụng đang mở** lúc tới giờ. Máy ngủ đúng giờ hẹn thì lịch sẽ chạy ngay khi máy thức dậy. Nếu ứng dụng tắt qua giờ hẹn, lần mở sau các lịch đó được ghi *nhỡ lịch* (không tự đăng muộn).
 
 ### Các tab khác
 
@@ -173,11 +183,13 @@ Dữ liệu của bạn nằm ở thư mục `data/` và file `.env`. **Mất `E
 | Hiện tượng | Cách xử lý |
 |---|---|
 | Không có Python, cửa sổ khởi động không mở | Cài Python 3.11+ (tick *Add to PATH* trên Windows) rồi bấm đúp lại `WordPressAgent.pyw`. Lỗi ghi ở `logs/launcher.log` |
-| Khởi động lần đầu lâu | Bình thường, có thể 1 đến 3 phút. Theo dõi tiến độ trong khung nhật ký của cửa sổ |
+| Khởi động lần đầu lâu | Bình thường, lần đầu sau khi cài có thể tới 1 phút. Theo dõi tiến độ trong khung nhật ký của cửa sổ |
+| Cài thư viện thất bại | Kiểm tra mạng rồi bấm thử lại. Ứng dụng dùng chứng chỉ của Windows (giúp khi có proxy / phần mềm diệt virus kiểm tra HTTPS) và tự chuyển sang `pip` nếu cách cài nhanh lỗi |
+| Hẹn giờ báo lỗi một website | Lịch vẫn được tạo; website lỗi sẽ được thử đăng lại khi tới giờ (ứng dụng cần đang mở). Xem chi tiết ở cột *Kết quả* trong tab Lịch đăng |
 | Báo chưa cấu hình `GEMINI_API_KEY` | Bấm **Khoá API** trong cửa sổ khởi động, điền khoá rồi khởi động lại |
 | Kiểm tra kết nối báo lỗi WC / WP | Kiểm tra URL (có `https://`), quyền Đọc/Ghi của khoá WooCommerce, Application Password; website phải bật REST API |
 | Không tải được ảnh | Cần điền **WP Username + Application Password**. Thông báo trên màn hình ghi rõ mã lỗi (401, 403, 413…) |
-| Cổng 7860 đang được dùng | Bấm **Mở trình duyệt** nếu đó là ứng dụng này, hoặc đặt `PORT=7861` trong `.env` |
+| Cổng 7860 đang được dùng | Bấm **Mở trình duyệt** nếu đó là ứng dụng này, hoặc đặt `PORT=7861` trong `.env` (sửa bằng Notepad vẫn được) |
 | Cần hỗ trợ | Gửi file `logs/app.log` và `logs/launcher.log` (nút **Nhật ký** trong cửa sổ khởi động). **Đừng** gửi file `.env` |
 
 ## Bảo mật
@@ -191,10 +203,18 @@ Dữ liệu của bạn nằm ở thư mục `data/` và file `.env`. **Mất `E
 ## Dành cho nhà phát triển
 
 ```bash
-pip install -r requirements.lock      # hoặc requirements.txt
+python tools/install_deps.py          # tạo .venv và cài thư viện (uv, lỗi thì tự dùng pip) như launcher
 pip install -r requirements-dev.txt   # pytest, pyflakes
 python -m pytest -q                   # chạy toàn bộ test
 python tools/make_release.py          # đóng gói dist/wordpress-agent-<VERSION>.zip (chỉ file đã commit)
 ```
 
-Kiến trúc phân lớp `ui/ → services/ → core/ → db/` có test bảo vệ, xem [ARCHITECTURE.md](ARCHITECTURE.md).
+Kiến trúc phân lớp `ui/ → services/ → core/ → db/` có test bảo vệ (`tests/test_architecture.py`). Danh sách lỗi đã rà soát và trạng thái sửa: [BUGS.md](BUGS.md).
+
+## Có gì mới trong 1.6
+
+- **Hẹn giờ an toàn hơn:** lịch `publish` đặt sẵn trên WordPress, lịch `draft` giữ đúng dạng nháp; huỷ/xoá lịch đã chạy không còn động tới bài đang công khai; báo lỗi riêng từng website và thử lại khi tới giờ.
+- **Cài đặt nhanh gấp khoảng 2 lần** (uv), tự chuyển sang pip khi cần; launcher đọc được `.env` lưu bằng Notepad, không còn treo cửa sổ.
+- **Ảnh:** mỗi website đúng logo watermark của mình, ảnh lỗi không làm lệch vị trí ảnh trong bài, xem trước ảnh hiển thị lại bình thường.
+- **Không còn đăng trùng** khi mạng chậm (không gửi lại lệnh tạo bài sau khi hết giờ chờ).
+- **Nhanh hơn:** tìm tài liệu không chờ nguồn chậm (nhanh hơn tới ~7 giây mỗi bài), gọi AI có giới hạn thời gian, Dashboard và Kho bài viết tải nhanh hơn với nhiều bài.

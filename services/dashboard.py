@@ -14,6 +14,8 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
+from sqlalchemy import func
+
 from core import wp_client
 from core.timeutil import fmt_vn, now_vn
 from db import crud
@@ -31,6 +33,7 @@ BUCKET_OF = {
     "saved": "saved",
     "published": "published",
     "draft": "published",       # đã lên WordPress (ở dạng nháp WP) vẫn tính là đã đăng từ app
+    "scheduled": "saved",       # đã hẹn giờ trên WordPress, chưa lên
     "failed": "failed",
     "trashed": "trashed",
     "missing": "trashed",
@@ -92,6 +95,16 @@ class SiteHealth:
         return self.wp_ok and self.wc_ok
 
 
+def _as_datetime(value):
+    """func.min() trên SQLite trả chuỗi thay vì datetime."""
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    return value
+
+
 def get_stats(days: int = 30, recent_limit: int = 10, today: date | None = None) -> DashboardStats:
     """Thống kê theo trạng thái / ngày (`days` ngày gần nhất, tính cả hôm nay) / website, lịch chờ và bài gần đây."""
     today = today or now_vn().date()
@@ -99,7 +112,7 @@ def get_stats(days: int = 30, recent_limit: int = 10, today: date | None = None)
     start_dt = datetime.combine(start_day, datetime.min.time())
 
     with session_scope() as db:
-        posts = db.query(PostHistory).all()
+        # Đếm bằng GROUP BY trong SQLite: không tải từng bài (kèm cả HTML) lên Python mỗi lần mở dashboard
         site_url = {s.id: (s.name, s.url) for s in crud.get_all_sites(db)}
 
         totals = {b: 0 for b in BUCKETS}
@@ -107,16 +120,27 @@ def get_stats(days: int = 30, recent_limit: int = 10, today: date | None = None)
             (start_day + timedelta(days=i)).isoformat(): {b: 0 for b in BUCKETS} for i in range(days)
         }
         per_site: dict[int, dict[str, int]] = {}
-        for h in posts:
-            bucket = BUCKET_OF.get(h.status or "", "saved")
-            totals[bucket] += 1
-            s = per_site.setdefault(h.site_id, {b: 0 for b in BUCKETS})
-            s[bucket] += 1
-            if h.created_at and h.created_at >= start_dt:
-                key = h.created_at.date().isoformat()
-                if key in per_day:
-                    per_day[key][bucket] += 1
-        totals["total"] = len(posts)
+        total_count = 0
+        by_status_site = (
+            db.query(PostHistory.status, PostHistory.site_id, func.count())
+            .group_by(PostHistory.status, PostHistory.site_id).all()
+        )
+        for status, site_id, n in by_status_site:
+            bucket = BUCKET_OF.get(status or "", "saved")
+            totals[bucket] += n
+            s = per_site.setdefault(site_id, {b: 0 for b in BUCKETS})
+            s[bucket] += n
+            total_count += n
+        day_col = func.date(PostHistory.created_at)
+        by_day = (
+            db.query(day_col, PostHistory.status, func.count())
+            .filter(PostHistory.created_at >= start_dt)
+            .group_by(day_col, PostHistory.status).all()
+        )
+        for day, status, n in by_day:
+            if day in per_day:
+                per_day[day][BUCKET_OF.get(status or "", "saved")] += n
+        totals["total"] = total_count
 
         daily = [DayCount(d, v["published"], v["saved"], v["failed"]) for d, v in per_day.items()]
         by_site = sorted(
@@ -125,9 +149,9 @@ def get_stats(days: int = 30, recent_limit: int = 10, today: date | None = None)
             key=lambda x: x.total, reverse=True,
         )
 
-        pending = (
-            db.query(ScheduledPost).filter(ScheduledPost.status == "pending")
-            .order_by(ScheduledPost.scheduled_time).all()
+        pending_count, next_time = (
+            db.query(func.count(ScheduledPost.id), func.min(ScheduledPost.scheduled_time))
+            .filter(ScheduledPost.status == "pending").one()
         )
 
         recent_rows = crud.get_recent_posts(db, limit=recent_limit)
@@ -148,8 +172,8 @@ def get_stats(days: int = 30, recent_limit: int = 10, today: date | None = None)
 
         return DashboardStats(
             days=days, totals=totals, daily=daily, by_site=by_site,
-            pending_jobs=len(pending),
-            next_job_time=fmt_vn(pending[0].scheduled_time) if pending else "",
+            pending_jobs=pending_count,
+            next_job_time=fmt_vn(_as_datetime(next_time)) if pending_count else "",
             recent=recent,
         )
 

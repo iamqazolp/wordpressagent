@@ -14,6 +14,21 @@ PROJECT_ROOT = Path(__file__).parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 DB_PATH = DATA_DIR / "wordpress_agent.db"
 
+
+def project_path(path: str | Path) -> Path:
+    """Đường dẫn tương đối (vd 'data/logos/x.png' lưu trong DB) tính từ thư mục dự án, không phụ thuộc thư mục đang chạy."""
+    p = Path(path)
+    return p if p.is_absolute() else PROJECT_ROOT / p
+
+
+def to_project_relative(path: str | Path) -> str:
+    """Ngược lại của project_path: file trong thư mục dự án -> 'data/...' (vẫn đúng khi chép thư mục sang máy khác)."""
+    p = Path(path)
+    try:
+        return p.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
+    except ValueError:
+        return str(p)
+
 # Create data directory if it doesn't exist
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 

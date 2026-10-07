@@ -31,8 +31,9 @@ cryptography==50.0.1
 tenacity==9.1.4
 nh3==0.3.7
 
-# Scheduler
+# Scheduler (Windows không có sẵn dữ liệu múi giờ: cần tzdata cho Asia/Ho_Chi_Minh)
 apscheduler==3.11.3
+tzdata; sys_platform == "win32"
 
 # Utils
 python-dotenv==1.2.3

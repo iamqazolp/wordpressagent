@@ -12,6 +12,7 @@ from __future__ import annotations
 import concurrent.futures
 import logging
 import re
+import time
 import unicodedata
 import urllib.parse
 import httpx
@@ -103,6 +104,26 @@ def _unwrap_url(url: str) -> str:
     return url
 
 
+def _result_within(fut: concurrent.futures.Future, seconds: float) -> list[dict] | None:
+    """Kết quả của luồng tìm kiếm nếu xong trong `seconds` giây; None nếu chưa xong, [] nếu lỗi."""
+    try:
+        return fut.result(timeout=max(0.0, seconds))
+    except concurrent.futures.TimeoutError:
+        return None
+    except Exception as e:
+        logger.warning(f"Lỗi nguồn tìm kiếm: {e}")
+        return []
+
+
+def _merge_results(results: list[dict], seen_urls: set, items: list[dict] | None, limit: int) -> None:
+    for r in items or []:
+        if len(results) >= limit:
+            break
+        if r["url"] not in seen_urls:
+            seen_urls.add(r["url"])
+            results.append(r)
+
+
 def search_articles(product_name: str, extra_urls: list[str] | None = None) -> list[dict]:
     """
     Tìm bài viết liên quan đến sản phẩm.
@@ -136,50 +157,23 @@ def search_articles(product_name: str, extra_urls: list[str] | None = None) -> l
 
     # 2. Tìm kiếm: nếu có SerpAPI key thì chạy song song SerpAPI + DuckDuckGo
     if getattr(settings, "SERP_API_KEY", ""):
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        # Không dùng `with`: thoát khối `with` phải chờ CẢ HAI luồng xong, nên SerpAPI trả đủ kết quả
+        # sau 0.3s vẫn phải chờ DuckDuckGo tới 8s. shutdown(wait=False) bỏ luồng chậm chạy nốt ở nền.
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        try:
             serp_fut = executor.submit(_search_via_serpapi, product_name, limit=limit)
             ddg_fut = executor.submit(_search_via_duckduckgo, product_name, limit=limit)
+            deadline = time.monotonic() + getattr(settings, "SERP_TIMEOUT", 8) + 1
 
-            # Ưu tiên kiểm tra SerpAPI trong 1.5 giây (cache hit thường trả về trong 0.2 - 0.5s)
-            try:
-                serp_results = serp_fut.result(timeout=1.5)
-            except concurrent.futures.TimeoutError:
-                serp_results = None
-
-            if serp_results:
-                for r in serp_results:
-                    if r["url"] not in seen_urls:
-                        seen_urls.add(r["url"])
-                        results.append(r)
-                    if len(results) >= limit:
-                        break
-
-            # Nếu SerpAPI chưa xong trong 1.5s, dùng kết quả DuckDuckGo (thường xong trong 0.8s)
+            # SerpAPI (Google) chất lượng hơn: chờ ngắn (cache hit thường 0.2 - 0.5s), đủ thì trả luôn
+            serp_results = _result_within(serp_fut, 1.5)
+            _merge_results(results, seen_urls, serp_results, limit)
             if len(results) < limit:
-                try:
-                    ddg_results = ddg_fut.result(timeout=1.0)
-                except concurrent.futures.TimeoutError:
-                    ddg_results = []
-
-                for r in ddg_results:
-                    if r["url"] not in seen_urls:
-                        seen_urls.add(r["url"])
-                        results.append(r)
-                    if len(results) >= limit:
-                        break
-
-            # Nếu vẫn chưa đủ và SerpAPI chưa xong, đợi SerpAPI hoàn tất
+                _merge_results(results, seen_urls, _result_within(ddg_fut, deadline - time.monotonic()), limit)
             if len(results) < limit and serp_results is None:
-                try:
-                    rem_serp = serp_fut.result()
-                    for r in rem_serp:
-                        if r["url"] not in seen_urls:
-                            seen_urls.add(r["url"])
-                            results.append(r)
-                        if len(results) >= limit:
-                            break
-                except Exception:
-                    pass
+                _merge_results(results, seen_urls, _result_within(serp_fut, deadline - time.monotonic()), limit)
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
     else:
         logger.info(f"Đang tìm kiếm qua DuckDuckGo cho '{product_name}'...")
         ddg_results = _search_via_duckduckgo(product_name, limit=limit)

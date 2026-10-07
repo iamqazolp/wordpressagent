@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 import pytest
 
 from core import pipeline, wp_client
-from core.timeutil import now_vn
+from core.timeutil import fmt_vn, now_vn
 from db import crud
 from db.models import PostHistory, ScheduledPost, Site
 from services import dashboard as dash
@@ -241,8 +241,9 @@ def test_get_stats_buckets_days_sites_and_recent(env):
     site = db.query(Site).first()
     old = PostHistory(site_id=site.id, product_name="Cũ", title="Cũ", status="published", created_at=now_vn() - timedelta(days=90))
     db.add(old)
+    sched_time = (now_vn() + timedelta(days=2)).replace(microsecond=0)
     db.add(ScheduledPost(product_name="J", post_type="product", post_status="draft", status="pending",
-                         scheduled_time=now_vn() + timedelta(days=2), site_names_json="[]", article_data_json="{}"))
+                         scheduled_time=sched_time, site_names_json="[]", article_data_json="{}"))
     db.commit()
     db.close()
     st = dash.get_stats(days=30)
@@ -251,7 +252,7 @@ def test_get_stats_buckets_days_sites_and_recent(env):
     today = st.daily[-1]
     assert (today.published, today.saved, today.failed) == (2, 1, 1)
     assert st.by_site[0].site_name == "shop" and st.by_site[0].total == 5
-    assert st.pending_jobs == 1 and st.next_job_time
+    assert st.pending_jobs == 1 and st.next_job_time == fmt_vn(sched_time)
     live = next(r for r in st.recent if r.id == ids["live"])
     assert live.url == "old-url" and live.admin_url == "https://shop.example.com/wp-admin/post.php?post=100&action=edit"
     assert next(r for r in st.recent if r.id == ids["saved"]).admin_url == ""

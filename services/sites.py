@@ -15,12 +15,12 @@ from pathlib import Path
 
 from core import wp_client
 from db import crud
-from db.database import session_scope
+from db.database import DATA_DIR, project_path, session_scope, to_project_relative
 from services.errors import ServiceError
 
 logger = logging.getLogger(__name__)
 
-LOGOS_DIR = Path("data") / "logos"
+LOGOS_DIR = DATA_DIR / "logos"
 DEFAULT_WM_POSITION = "bottom-right"
 DEFAULT_WM_OPACITY = 0.7
 
@@ -59,7 +59,7 @@ def normalize_url(raw_url: str) -> str:
 
 
 def _existing_logo(path: str | None) -> str:
-    return path if (path and Path(path).exists()) else ""
+    return str(project_path(path)) if (path and project_path(path).exists()) else ""
 
 
 def list_site_names() -> list[str]:
@@ -115,7 +115,7 @@ def _store_watermark(site_name: str, source_path: str | None) -> str | None:
     dest = LOGOS_DIR / f"{safe_filename(site_name)}_watermark{ext}"
     shutil.copy2(source_path, dest)
     logger.info(f"Đã lưu logo watermark cho {site_name} tại {dest}")
-    return str(dest)
+    return to_project_relative(dest)
 
 
 def save_site(
@@ -200,9 +200,9 @@ def clear_watermark(name: str) -> None:
         site = crud.get_site_by_name(db, name)
         if not site:
             raise ServiceError(f"Không tìm thấy website '{name}'.")
-        if site.watermark_path and Path(site.watermark_path).exists():
+        if site.watermark_path and project_path(site.watermark_path).exists():
             try:
-                Path(site.watermark_path).unlink()
+                project_path(site.watermark_path).unlink()
             except Exception as e:
                 logger.warning(f"Không thể xóa file watermark cũ: {e}")
         crud.update_site(db, site.id, watermark_path="")

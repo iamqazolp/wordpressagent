@@ -12,14 +12,18 @@ import logging
 import os
 import shutil
 from pathlib import Path
+import threading
+from collections import OrderedDict
 from typing import Any
 
 from PIL import Image, ImageEnhance, ImageOps
 
+from db.database import DATA_DIR, project_path
+
 logger = logging.getLogger(__name__)
 
 # Thư mục mặc định lưu ảnh đã xử lý
-DEFAULT_PROCESSED_DIR = Path("data") / "processed_images"
+DEFAULT_PROCESSED_DIR = DATA_DIR / "processed_images"
 DEFAULT_PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
 # Vị trí watermark được hỗ trợ
@@ -78,26 +82,74 @@ def optimize_and_resize(
     return img
 
 
-def remove_background(img: Image.Image) -> tuple[Image.Image, bool]:
+# Một phiên rembg dùng chung: rembg.remove() không truyền session sẽ nạp lại model (~170MB, 1-3 giây) cho MỖI ảnh,
+# và khi đăng song song (4 website x 4 ảnh) có thể nạp 16 bản cùng lúc -> hết RAM trên máy Windows phổ thông.
+# Khóa vừa bảo vệ việc tạo phiên vừa cho tách nền lần lượt từng ảnh (ONNX tự dùng nhiều nhân CPU).
+_rembg_session = None
+_rembg_lock = threading.Lock()
+# Cùng một ảnh đăng lên nhiều website chỉ cần tách nền một lần (chỉ logo watermark là khác nhau)
+_BG_CACHE_MAX = 16
+_bg_cache: "OrderedDict[tuple, Image.Image]" = OrderedDict()
+
+
+def remove_background(img: Image.Image, cache_key: tuple | None = None) -> tuple[Image.Image, bool]:
     """
     Tách nền sản phẩm bằng thư viện rembg chạy local.
+    `cache_key` (vd đường dẫn + mtime + kích thước): ảnh đã tách nền với cùng khóa được dùng lại.
     Trả về: (img_đã_xóa_nền, success_boolean)
     """
+    global _rembg_session
     if not is_rembg_available():
         logger.warning("Thư viện rembg chưa được cài đặt. Giữ nguyên nền gốc.")
         return img, False
 
     try:
         import rembg
-        logger.info("Bắt đầu tách nền bằng rembg...")
-        # Đảm bảo ảnh ở định dạng RGBA trước khi tách nền
-        rgba_img = img.convert("RGBA") if img.mode != "RGBA" else img
-        no_bg_img = rembg.remove(rgba_img)
+        with _rembg_lock:
+            if cache_key is not None and cache_key in _bg_cache:
+                _bg_cache.move_to_end(cache_key)
+                return _bg_cache[cache_key].copy(), True
+            if _rembg_session is None:
+                _rembg_session = rembg.new_session()
+            logger.info("Bắt đầu tách nền bằng rembg...")
+            # Đảm bảo ảnh ở định dạng RGBA trước khi tách nền
+            rgba_img = img.convert("RGBA") if img.mode != "RGBA" else img
+            no_bg_img = rembg.remove(rgba_img, session=_rembg_session)
+            if cache_key is not None:
+                _bg_cache[cache_key] = no_bg_img.copy()
+                while len(_bg_cache) > _BG_CACHE_MAX:
+                    _bg_cache.popitem(last=False)
         logger.info("Tách nền thành công.")
         return no_bg_img, True
     except Exception as e:
         logger.warning(f"Lỗi khi tách nền bằng rembg: {e}. Giữ nguyên ảnh gốc.")
         return img, False
+
+
+_wm_cache: dict[tuple, Image.Image] = {}
+_wm_lock = threading.Lock()
+
+
+def _load_watermark(wm_path: Path) -> Image.Image:
+    """
+    Logo RGBA đã xoay đúng chiều, dùng lại theo (đường dẫn, thời điểm sửa, kích thước): trước đây mở + giải mã
+    lại cho từng ảnh của từng website. Đổi logo (file khác mtime) thì tự nạp lại. Không giữ file mở (Windows khóa file).
+    """
+    st = wm_path.stat()
+    key = (str(wm_path), st.st_mtime_ns, st.st_size)
+    with _wm_lock:
+        cached = _wm_cache.get(key)
+        if cached is None:
+            with Image.open(wm_path) as im:
+                cached = im.convert("RGBA")
+            try:
+                cached = ImageOps.exif_transpose(cached)
+            except Exception:
+                pass
+            for old_key in [k for k in _wm_cache if k[0] == key[0]]:
+                del _wm_cache[old_key]
+            _wm_cache[key] = cached
+        return cached
 
 
 def apply_watermark(
@@ -117,18 +169,13 @@ def apply_watermark(
     - scale: Tỷ lệ kích thước watermark so với chiều ngang của ảnh gốc (mặc định 18%)
     - margin: Khoảng cách cách mép (pixel)
     """
-    wm_path = Path(watermark_path)
+    wm_path = project_path(watermark_path)
     if not wm_path.exists():
         logger.warning(f"Không tìm thấy file watermark: {watermark_path}")
         return base_img, False
 
     try:
-        # Mở logo và chuyển sang RGBA để xử lý kênh alpha
-        wm_raw = Image.open(wm_path).convert("RGBA")
-        try:
-            wm_raw = ImageOps.exif_transpose(wm_raw)
-        except Exception:
-            pass
+        wm_raw = _load_watermark(wm_path)
 
         base_w, base_h = base_img.size
 
@@ -321,13 +368,19 @@ def process_single_image(
 
     try:
         with Image.open(inp) as raw_img:
+            # JPEG: giải mã thẳng ở kích thước nhỏ gần đích (DCT scaling) thay vì giải mã đủ 12MP rồi mới thu nhỏ
+            # (~40% nhanh hơn). Dùng cạnh lớn nhất cho cả hai chiều vì ảnh có thể còn xoay theo EXIF.
+            side = max(max_w, max_h)
+            raw_img.draft(raw_img.mode, (side, side))
             # 1. Resize & Chuẩn hóa EXIF
             working_img = optimize_and_resize(raw_img, max_width=max_w, max_height=max_h)
 
             # 2. Tách nền (nếu người dùng bật)
             bg_removed = False
             if do_remove_bg:
-                working_img, bg_removed = remove_background(working_img)
+                st = inp.stat()
+                cache_key = (str(inp.resolve()), st.st_mtime_ns, st.st_size, max_w, max_h)
+                working_img, bg_removed = remove_background(working_img, cache_key=cache_key)
 
             # 3. Đóng dấu Watermark (nếu có đường dẫn file logo)
             watermarked = False

@@ -82,6 +82,7 @@ def main():
 
     # Tạo và khởi chạy Gradio UI
     from ui.main_ui import create_app
+    from services.images import POST_IMAGES_DIR
     import gradio as gr
     import os
 
@@ -113,6 +114,8 @@ def main():
         auth=auth,
         inbrowser=os.getenv("APP_OPEN_BROWSER", "true").strip().lower() in ("1", "true", "yes", "on"),
         theme=gr.themes.Soft(primary_hue="blue"),
+        # Ảnh đã lưu của bài (xem trước trong kho). Chỉ mở thư mục ảnh, không mở cả data/ (có CSDL).
+        allowed_paths=[str(POST_IMAGES_DIR)],
     )
 
 

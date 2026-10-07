@@ -46,3 +46,16 @@ def utc_iso_to_vn(value: Optional[str], fmt: str = "%d/%m/%Y %H:%M", empty: str 
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return fmt_vn(dt, fmt, empty)
+
+
+def vn_to_utc_iso(dt: Optional[datetime]) -> Optional[str]:
+    """
+    Chuyển datetime naive GMT+7 sang chuỗi ISO UTC (YYYY-MM-DDTHH:MM:SS) không có hậu tố múi giờ
+    cho các trường *_gmt của WordPress REST API (vd date_gmt, date_created_gmt).
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=VN_TZ)
+    utc_dt = dt.astimezone(timezone.utc)
+    return utc_dt.strftime("%Y-%m-%dT%H:%M:%S")

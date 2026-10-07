@@ -29,16 +29,9 @@ rem Tao .env NGAY (truoc khi cai thu vien) de du buoc cai co loi, file van co sa
 %PY% tools\init_env.py >nul
 set "ENVRC=%errorlevel%"
 
-if not exist ".venv\Scripts\python.exe" (
-  %PY% -m venv .venv
-  if errorlevel 1 ( echo [X] Khong tao duoc moi truong ao. & pause & exit /b 1 )
-)
-
-".venv\Scripts\python.exe" -m pip install --upgrade pip -q
-echo Dang cai thu vien (vai phut o lan dau)...
-".venv\Scripts\python.exe" -m pip install -r requirements.txt
+rem Tao .venv + cai thu vien (uv, loi thi tu chuyen sang pip) - cung logic voi launcher
+%PY% tools\install_deps.py
 if errorlevel 1 ( echo [X] Cai thu vien that bai. Kiem tra ket noi mang roi chay lai. & pause & exit /b 1 )
-".venv\Scripts\python.exe" -c "from launcher.core import requirements_stamp, _stamp_path; from pathlib import Path; p = Path('.'); _stamp_path(p).write_text(requirements_stamp(p), encoding='utf-8')"
 
 echo.
 echo [OK] Cai dat xong.

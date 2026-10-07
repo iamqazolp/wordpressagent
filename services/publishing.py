@@ -71,7 +71,8 @@ def publish_and_record(
     Đăng lần lượt lên từng website rồi ghi lịch sử (thành công → 'published', lỗi → 'failed').
     Trả danh sách kết quả của core.pipeline.publish_one (success, post_url, edit_url, cảnh báo...).
     """
-    image_paths = image_paths or []
+    # Lưu bản sao vào data/post_images: đường dẫn tạm của Gradio bị dọn sau đó -> đăng lại từ kho sẽ mất ảnh
+    image_paths = image_service.persist_images(image_paths or [])
     configs = site_service.get_site_configs()
     results = pipeline.publish_articles(
         articles=articles,

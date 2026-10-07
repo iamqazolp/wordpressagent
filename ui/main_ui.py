@@ -5,7 +5,8 @@ import gradio as gr
 
 from ui.tab_create import (
     build_tab_create, run_pipeline_ui, publish_to_sites_ui, schedule_post_ui, save_draft_articles_ui,
-    on_change_preview_site, on_edit_title, on_edit_short_desc, on_toggle_edit_mode, on_save_html_edit
+    on_change_preview_site, on_edit_title, on_edit_short_desc, on_toggle_edit_mode, on_save_html_edit,
+    refresh_site_pickers,
 )
 from ui.seo_panel import refresh_seo_panel
 from ui.app_control import build_app_control
@@ -26,7 +27,7 @@ from ui.tab_sites import (
     build_tab_sites, handle_save_site, handle_delete_site, handle_test_connection_ui, on_select_site_for_edit, handle_clear_watermark
 )
 from ui.tab_history import (
-    build_tab_history, fetch_history_data, get_history_post_choices, on_select_history_post
+    build_tab_history, fetch_history_view, on_select_history_post
 )
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,18 @@ force_light_js = """
          document.body.classList.remove('dark');
      }
 """ 
+
+
+def _mirror_site_update(create_cb):
+    """
+    Ô chọn website ở tab Hàng loạt đi theo tab Tạo bài. gr.update() rỗng (lỗi nhập liệu, chưa chọn site)
+    cũng là dict -> chỉ chép các khóa thực sự có, không thì danh sách bị xóa sạch.
+    """
+    if not isinstance(create_cb, dict):
+        return gr.update()
+    return gr.update(**{k: create_cb[k] for k in ("choices", "value") if k in create_cb})
+
+
 def create_app() -> gr.Blocks:
     """Build and return the complete Gradio Blocks app."""
     with gr.Blocks(
@@ -248,8 +261,7 @@ def create_app() -> gr.Blocks:
                                  progress=gr.Progress()):
             msg = publish_to_sites_ui(art_state, imgs, p_status, p_type, r_price, s_price, optimize_images=opt_img,
                                       remove_bg=rem_bg, apply_watermark=wm_chk, progress=progress)
-            df = fetch_history_data(s_filter, st_filter)
-            choices = get_history_post_choices(s_filter, st_filter)
+            df, choices = fetch_history_view(s_filter, st_filter)
             new_val = choices[0] if choices else None
             return msg, df, gr.update(choices=choices, value=new_val)
 
@@ -295,8 +307,7 @@ def create_app() -> gr.Blocks:
 
         def _on_save_draft_and_sync(art_state, imgs, p_type, r_price, s_price, s_filter, st_filter):
             msg = save_draft_articles_ui(art_state, imgs, p_type, r_price, s_price)
-            df = fetch_history_data(s_filter, st_filter)
-            choices = get_history_post_choices(s_filter, st_filter)
+            df, choices = fetch_history_view(s_filter, st_filter)
             new_val = choices[0] if choices else None
             return msg, df, gr.update(choices=choices, value=new_val)
 
@@ -322,7 +333,7 @@ def create_app() -> gr.Blocks:
             outputs=history_detail_outputs,
         )
 
-        site_names_state = gr.State(create_comps['site_names'])
+        site_names_state = create_comps['site_names_state']
         create_comps['schedule_btn'].click(
             fn=lambda mode, *rest: schedule_post_ui(
                 *rest[:7], mode == "Mỗi website một giờ", *rest[7:],
@@ -347,8 +358,7 @@ def create_app() -> gr.Blocks:
         # Tự động đồng bộ và nạp dữ liệu mới nhất khi người dùng chuyển sang Tab 4
         # =====================================================================
         def _on_switch_to_history_tab(site_f, status_f, current_choice):
-            df = fetch_history_data(site_f, status_f)
-            choices = get_history_post_choices(site_f, status_f)
+            df, choices = fetch_history_view(site_f, status_f)
             val = current_choice if (current_choice and current_choice in choices) else (choices[0] if choices else None)
             return df, gr.update(choices=choices, value=val)
 
@@ -366,7 +376,7 @@ def create_app() -> gr.Blocks:
             outputs=[history_comps['taxonomy']['categories'], history_comps['taxonomy']['tags'], history_comps['taxonomy']['status']],
         )
 
-        tab_remote_item.select(fn=refresh_remote_sites, inputs=[], outputs=[remote_comps['site']])
+        tab_remote_item.select(fn=refresh_remote_sites, inputs=[remote_comps['site']], outputs=[remote_comps['site']])
 
         # =====================================================================
         # EVENT WIRING (Tab 5: Quản lý Template)
@@ -431,22 +441,22 @@ def create_app() -> gr.Blocks:
             ],
         )
 
+        # Thêm/xóa/đổi tên website -> ô chọn giờ riêng từng website ở tab Tạo bài đi theo
+        _pickers = create_comps['site_time_pickers']
+        _refresh_pickers = dict(
+            fn=lambda: refresh_site_pickers(len(_pickers)),
+            outputs=[create_comps['site_names_state'], *_pickers],
+        )
+
         def _sync_sites_on_save(name, url, key, secret, user, pwd, wm_file, wm_pos, wm_opacity, current_sel):
             status_msg, table_md, edit_dd, create_cb, wm_preview, wm_input = handle_save_site(
                 name, url, key, secret, user, pwd, wm_file, wm_pos, wm_opacity, current_sel
             )
-            # gr.update() trả về dict, không phải component → dùng dict access
-            cb_choices = create_cb.get("choices", []) if isinstance(create_cb, dict) else []
-            cb_value = create_cb.get("value", []) if isinstance(create_cb, dict) else []
-            bulk_cb = gr.update(choices=cb_choices, value=cb_value)
-            return status_msg, table_md, edit_dd, create_cb, bulk_cb, wm_preview, wm_input
+            return status_msg, table_md, edit_dd, create_cb, _mirror_site_update(create_cb), wm_preview, wm_input
 
         def _sync_sites_on_delete(current_sel):
             status_msg, table_md, edit_dd, create_cb, wm_preview = handle_delete_site(current_sel)
-            cb_choices = create_cb.get("choices", []) if isinstance(create_cb, dict) else []
-            cb_value = create_cb.get("value", []) if isinstance(create_cb, dict) else []
-            bulk_cb = gr.update(choices=cb_choices, value=cb_value)
-            return status_msg, table_md, edit_dd, create_cb, bulk_cb, wm_preview
+            return status_msg, table_md, edit_dd, create_cb, _mirror_site_update(create_cb), wm_preview
 
         sites_comps['btn_save_site'].click(
             fn=_sync_sites_on_save,
@@ -471,7 +481,7 @@ def create_app() -> gr.Blocks:
                 sites_comps['current_watermark_preview'],
                 sites_comps['input_watermark_file'],
             ],
-        )
+        ).then(**_refresh_pickers)
 
         sites_comps['btn_delete_site'].click(
             fn=_sync_sites_on_delete,
@@ -484,7 +494,7 @@ def create_app() -> gr.Blocks:
                 bulk_comps['sites_selector'],
                 sites_comps['current_watermark_preview'],
             ],
-        )
+        ).then(**_refresh_pickers)
 
         sites_comps['btn_clear_watermark'].click(
             fn=handle_clear_watermark,

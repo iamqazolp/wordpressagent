@@ -22,18 +22,20 @@ _STATUS_FILTERS = {
     "💾 Đã lưu nháp": post_service.STATUS_SAVED,
     "✅ Đã đăng": ("published",),
     "📝 Nháp WP": ("draft",),
+    "⏰ Đã hẹn giờ": ("scheduled",),
     "❌ Lỗi": post_service.STATUS_FAILED,
 }
 _STATUS_LABELS = {
     "saved": "💾 Đã lưu nháp",
     "published": "✅ Đã đăng",
     "draft": "📝 Nháp WP",
+    "scheduled": "⏰ Đã hẹn giờ",
     "failed": "❌ Lỗi",
     "trashed": "🗑️ Thùng rác WP",
     "missing": "❓ Không còn trên WP",
 }
 _CHOICE_STATUS = {
-    "saved": "Đã lưu", "published": "Đã đăng", "draft": "Nháp WP", "trashed": "Thùng rác WP", "missing": "Không còn trên WP",
+    "saved": "Đã lưu", "published": "Đã đăng", "draft": "Nháp WP", "scheduled": "Đã hẹn giờ", "trashed": "Thùng rác WP", "missing": "Không còn trên WP",
 }
 _TABLE_COLUMNS = ["ID", "Sản phẩm", "Tiêu đề", "Website", "Loại", "Trạng thái", "Ảnh", "Giá gốc", "Giá KM",
                   "Danh mục / Tag", "Ngày tạo (GMT+7)", "Link WP"]
@@ -48,14 +50,17 @@ def _statuses(status_filter: str):
     return _STATUS_FILTERS.get(status_filter) if status_filter and status_filter != ALL else None
 
 
-def fetch_history_data(site_filter: str = ALL, status_filter: str = ALL) -> pd.DataFrame:
-    """Lấy dữ liệu lịch sử và kho bài viết từ CSDL với bộ lọc."""
+def _list_rows(site_filter: str, status_filter: str) -> list | None:
     try:
-        rows = post_service.list_posts(_site_arg(site_filter), _statuses(status_filter))
+        return post_service.list_posts(_site_arg(site_filter), _statuses(status_filter))
     except Exception as e:
         logger.error(f"Lỗi khi lấy kho bài viết: {e}")
-        return pd.DataFrame()
+        return None
 
+
+def _rows_to_df(rows: list | None) -> pd.DataFrame:
+    if rows is None:
+        return pd.DataFrame()
     data = [{
         "ID": r.id,
         "Sản phẩm": r.product_name,
@@ -73,13 +78,28 @@ def fetch_history_data(site_filter: str = ALL, status_filter: str = ALL) -> pd.D
     return pd.DataFrame(data) if data else pd.DataFrame(columns=_TABLE_COLUMNS)
 
 
+def _rows_to_choices(rows: list | None) -> list[str]:
+    choices = [
+        f"#{r.id} - {r.product_name[:35]} ({r.site_name}) [{_CHOICE_STATUS.get(r.status, 'Lỗi')}]"
+        for r in (rows or [])
+    ]
+    return choices if choices else ["(Chưa có bài viết nào)"]
+
+
+def fetch_history_data(site_filter: str = ALL, status_filter: str = ALL) -> pd.DataFrame:
+    """Lấy dữ liệu lịch sử và kho bài viết từ CSDL với bộ lọc."""
+    return _rows_to_df(_list_rows(site_filter, status_filter))
+
+
 def get_history_post_choices(site_filter: str = ALL, status_filter: str = ALL) -> list[str]:
     """Tạo danh sách lựa chọn bài viết cho Dropdown."""
-    choices = []
-    for r in post_service.list_posts(_site_arg(site_filter), _statuses(status_filter)):
-        status_text = _CHOICE_STATUS.get(r.status, "Lỗi")
-        choices.append(f"#{r.id} - {r.product_name[:35]} ({r.site_name}) [{status_text}]")
-    return choices if choices else ["(Chưa có bài viết nào)"]
+    return _rows_to_choices(_list_rows(site_filter, status_filter))
+
+
+def fetch_history_view(site_filter: str = ALL, status_filter: str = ALL) -> tuple[pd.DataFrame, list[str]]:
+    """Bảng + danh sách chọn bài từ MỘT lần truy vấn (trước đây mỗi thao tác truy vấn kho hai lần)."""
+    rows = _list_rows(site_filter, status_filter)
+    return _rows_to_df(rows), _rows_to_choices(rows)
 
 
 def _status_text(d: post_service.PostDetail) -> str:
@@ -187,7 +207,7 @@ def on_save_history_edits(
         return f"❌ Lỗi khi lưu: {str(e)}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
     existing = d.existing_image_paths
-    choices = get_history_post_choices(site_filter, status_filter)
+    history_df, choices = fetch_history_view(site_filter, status_filter)
     current_choice = next((c for c in choices if c.startswith(f"#{d.id} - ")), choice_str)
     info_md = _info_md(d, "Ngày cập nhật", now_vn().strftime("%Y-%m-%d %H:%M"), len(existing))
 
@@ -196,7 +216,7 @@ def on_save_history_edits(
         f"✅ **Đã lưu cập nhật thành công cho bài #{d.id} ({d.product_name})!** (Hình ảnh: {len(existing)} ảnh)",
         make_preview_html(d.raw_html, existing),
         existing if existing else None,
-        fetch_history_data(site_filter, status_filter),
+        history_df,
         gr.update(choices=choices, value=current_choice),
         info_md,
         None,
@@ -319,7 +339,7 @@ def _publish_history(
         else f"🎉 Đã đăng thành công lên {out.site_name}!" if out.post_status == "publish"
         else f"📝 Đã lưu nháp lên {out.site_name} (chưa công khai)"
     )
-    updated_choices = get_history_post_choices(site_filter, status_filter)
+    history_df, updated_choices = fetch_history_view(site_filter, status_filter)
     current_choice = next((c for c in updated_choices if c.startswith(f"#{out.post_id} - ")), None)
 
     d = post_service.get_post(out.post_id)
@@ -333,7 +353,7 @@ def _publish_history(
     ])
     return (
         result_msg,
-        fetch_history_data(site_filter, status_filter),
+        history_df,
         gr.update(choices=updated_choices, value=current_choice),
         out.image_paths if out.image_paths else None,
         info_md,
@@ -354,10 +374,10 @@ def on_delete_history_post(choice_str: str, site_filter: str = ALL, status_filte
     except ServiceError as e:
         msg = f"❌ {e.message}"
 
-    updated_choices = get_history_post_choices(site_filter, status_filter)
+    history_df, updated_choices = fetch_history_view(site_filter, status_filter)
     return (
         msg,
-        fetch_history_data(site_filter, status_filter),
+        history_df,
         gr.update(choices=updated_choices, value=updated_choices[0] if updated_choices else None),
         None,
         "*(Đã xóa bài viết - vui lòng chọn bài khác)*",
@@ -490,8 +510,7 @@ def build_tab_history(db_session=None) -> dict:
 
     # XỬ LÝ SỰ KIỆN NỘI BỘ
     def _on_filter_change(site_f, status_f):
-        df = fetch_history_data(site_f, status_f)
-        choices = get_history_post_choices(site_f, status_f)
+        df, choices = fetch_history_view(site_f, status_f)
         new_val = choices[0] if choices else None
         return df, gr.update(choices=choices, value=new_val)
 
@@ -525,9 +544,9 @@ def build_tab_history(db_session=None) -> dict:
     multi_none_btn.click(fn=lambda: gr.update(value=[]), outputs=[multi_pick])
 
     def _after_batch(site_f, status_f):
-        df = fetch_history_data(site_f, status_f)
-        choices = get_history_post_choices(site_f, status_f)
-        return df, gr.update(choices=choices, value=choices[0] if choices else None), _multi_choices(site_f, status_f)
+        df, choices = fetch_history_view(site_f, status_f)
+        multi_update = gr.update(choices=[c for c in choices if c.startswith("#")], value=[])
+        return df, gr.update(choices=choices, value=choices[0] if choices else None), multi_update
 
     batch_ui.wire_batch(
         multi, multi_pick, then_fn=_after_batch, then_inputs=[site_filter, status_filter],
@@ -567,10 +586,11 @@ def build_tab_history(db_session=None) -> dict:
     # Click vào dòng trên bảng -> tự động load bài viết đó vào chi tiết
     def _on_table_row_select(evt: gr.SelectData, site_f, status_f):
         try:
-            row_idx = evt.index[0]
-            df = fetch_history_data(site_f, status_f)
-            if not df.empty and row_idx < len(df):
-                selected_id = int(df.iloc[row_idx]["ID"])
+            # Lấy ID từ chính dòng được bấm (cột đầu): tải lại bảng rồi tra theo số dòng sẽ lệch khi kho
+            # vừa thêm/xoá bài (lịch hẹn giờ chạy, tab khác) -> mở nhầm bài.
+            row = evt.row_value or []
+            if row:
+                selected_id = int(str(row[0]).lstrip("#"))
                 choices = get_history_post_choices(site_f, status_f)
                 matched = next((c for c in choices if c.startswith(f"#{selected_id} - ")), None)
                 if matched:

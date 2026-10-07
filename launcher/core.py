@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import hashlib
 import os
+import signal
 import socket
 import subprocess
 import sys
+import threading
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -37,6 +39,11 @@ class PortBusy(LauncherError):
 
 def is_windows() -> bool:
     return os.name == "nt"
+
+
+def popen_group_kwargs() -> dict:
+    """macOS/Linux: tiến trình con thành nhóm riêng để kill_process_tree tắt được cả cháu chắt (Windows dùng taskkill /T)."""
+    return {} if is_windows() else {"start_new_session": True}
 
 
 def no_window_flags() -> int:
@@ -70,13 +77,22 @@ def python_ok(version_info=None) -> bool:
 
 # ── .env ──────────────────────────────────────────────────────────────────────
 
+def _read_env_text(path: Path) -> str:
+    """Notepad trên Windows hay lưu UTF-8 kèm BOM (khóa đầu thành '\ufeffPORT') hoặc ANSI -> đọc chịu lỗi."""
+    data = path.read_bytes()
+    try:
+        return data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return data.decode("utf-8", errors="replace").lstrip("\ufeff")
+
+
 def read_env(root: Path) -> dict[str, str]:
     """Đọc .env thành dict (bỏ dòng trống/chú thích, bỏ cặp nháy bao ngoài)."""
     values: dict[str, str] = {}
     path = Path(root) / ".env"
     if not path.exists():
         return values
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in _read_env_text(path).splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -91,7 +107,7 @@ def read_env(root: Path) -> dict[str, str]:
 def update_env(root: Path, updates: dict[str, str]) -> None:
     """Ghi/đổi các khoá trong .env, giữ nguyên mọi dòng khác (chú thích, thứ tự, ENCRYPTION_KEY...)."""
     path = Path(root) / ".env"
-    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    lines = _read_env_text(path).splitlines() if path.exists() else []
     pending = dict(updates)
     out: list[str] = []
     for line in lines:
@@ -134,18 +150,66 @@ def needs_install(root: Path) -> bool:
     return not stamp.exists() or stamp.read_text(encoding="utf-8").strip() != requirements_stamp(root)
 
 
+# Tiến trình con do run_logged mở (pip, venv, backup) — để đóng launcher thì tắt được
+_children: set[subprocess.Popen] = set()
+_children_lock = threading.Lock()
+_shutting_down = False
+
+
 def run_logged(cmd: list[str], cwd: Path, log: Log, env: dict | None = None) -> int:
     """Chạy lệnh (không cửa sổ), chuyển từng dòng đầu ra cho `log`. Trả mã thoát."""
-    proc = subprocess.Popen(
-        cmd, cwd=str(cwd), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, encoding="utf-8", errors="replace", creationflags=no_window_flags(),
-    )
-    assert proc.stdout is not None
-    for line in proc.stdout:
-        line = line.rstrip()
-        if line:
-            log(line)
-    return proc.wait()
+    with _children_lock:
+        if _shutting_down:
+            raise LauncherError("Launcher đang thoát.")
+        proc = subprocess.Popen(
+            cmd, cwd=str(cwd), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding="utf-8", errors="replace", creationflags=no_window_flags(),
+            **popen_group_kwargs(),
+        )
+        _children.add(proc)
+    try:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            line = line.rstrip()
+            if line:
+                log(line)
+        return proc.wait()
+    finally:
+        with _children_lock:
+            _children.discard(proc)
+
+
+def stop_all_children() -> None:
+    """Đóng launcher giữa chừng: dừng pip/venv đang chạy và chặn mở tiến trình mới."""
+    global _shutting_down
+    with _children_lock:
+        _shutting_down = True
+        procs = list(_children)
+    for proc in procs:
+        kill_process_tree(proc)
+
+
+# uv cài nhanh gấp ~2 lần pip (tải và giải nén song song; Windows thường còn chênh hơn).
+# Cài uv vào chính .venv (không đụng Python của người dùng); lỗi thì quay về pip.
+UV_SPEC = "uv==0.12.5"
+UV_ENV = {
+    "UV_LINK_MODE": "copy",        # thư mục dự án trong OneDrive / khác ổ đĩa với cache: hardlink không dùng được
+    "UV_SYSTEM_CERTS": "1",        # dùng kho chứng chỉ của Windows (antivirus/proxy công ty chặn HTTPS)
+    "UV_NO_PROGRESS": "1",         # thanh tiến độ làm rối khung nhật ký
+    "UV_COMPILE_BYTECODE": "1",    # biên dịch .pyc song song lúc cài: lần mở app đầu tiên nhanh hơn ~3 giây
+}
+
+
+def install_requirements(py: str, root: Path, log: Log, env: dict) -> None:
+    """Cài requirements.txt vào Python `py` của .venv: ưu tiên uv, không được thì dùng pip. Raise LauncherError."""
+    if run_logged([py, "-m", "pip", "install", "-q", UV_SPEC], root, log, env) == 0:
+        cmd = [py, "-m", "uv", "pip", "install", "--python", py, "-r", "requirements.txt"]
+        if run_logged(cmd, root, log, {**env, **UV_ENV}) == 0:
+            return
+    log("Không dùng được uv, chuyển sang pip (chậm hơn)...")
+    run_logged([py, "-m", "pip", "install", "--upgrade", "pip", "-q"], root, log, env)
+    if run_logged([py, "-m", "pip", "install", "-r", "requirements.txt"], root, log, env) != 0:
+        raise LauncherError("Cài thư viện thất bại. Kiểm tra kết nối mạng rồi bấm thử lại.")
 
 
 def install(root: Path, log: Log, python: str | None = None) -> None:
@@ -167,9 +231,7 @@ def install(root: Path, log: Log, python: str | None = None) -> None:
 
     py = str(venv_python(root))
     log("Đang cài thư viện (vài phút ở lần đầu, cần Internet)...")
-    run_logged([py, "-m", "pip", "install", "--upgrade", "pip", "-q"], root, log, env)
-    if run_logged([py, "-m", "pip", "install", "-r", "requirements.txt"], root, log, env) != 0:
-        raise LauncherError("Cài thư viện thất bại. Kiểm tra kết nối mạng rồi bấm thử lại.")
+    install_requirements(py, root, log, env)
     _stamp_path(root).write_text(requirements_stamp(root), encoding="utf-8")
     log("✓ Cài đặt xong.")
 
@@ -191,10 +253,19 @@ def kill_process_tree(proc: subprocess.Popen, timeout: float = 8.0) -> None:
             ["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True, creationflags=no_window_flags(), check=False,
         )
     else:
-        proc.terminate()
+        # Tiến trình mở bằng start_new_session (popen_group_kwargs) là trưởng nhóm: tắt cả nhóm (vd. frpc chia sẻ)
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError):
+            proc.terminate()
     try:
         proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
+        if not is_windows():
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except OSError:
+                pass
         proc.kill()
         proc.wait(timeout=timeout)
 
@@ -209,6 +280,8 @@ class AppRunner:
         self.log_path = self.root / "logs" / log_name
         self.proc: subprocess.Popen | None = None
         self._log_file = None
+        self._lock = threading.Lock()
+        self._closed = False
 
     # cấu hình đọc từ .env mỗi lần để người dùng đổi PORT là ăn ngay
     @property
@@ -253,6 +326,12 @@ class AppRunner:
         return self._log_file
 
     def start(self) -> None:
+        with self._lock:  # shutdown() chạy song song (đóng cửa sổ) không để lọt tiến trình mồ côi
+            if self._closed:
+                raise LauncherError("Launcher đang thoát.")
+            self._start()
+
+    def _start(self) -> None:
         if self.alive():
             return
         if port_in_use(self.port):
@@ -262,15 +341,16 @@ class AppRunner:
             )
         if not Path(self.python).exists():
             raise LauncherError("Chưa cài đặt xong (thiếu môi trường .venv).")
+        # PORT: ép app nghe đúng cổng launcher đang chờ (PORT sót trong biến môi trường hệ thống không được thắng .env)
         env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", "APP_OPEN_BROWSER": "false",
-               "GRADIO_ANALYTICS_ENABLED": "False", "HF_HUB_DISABLE_TELEMETRY": "1"}
+               "GRADIO_ANALYTICS_ENABLED": "False", "HF_HUB_DISABLE_TELEMETRY": "1", "PORT": str(self.port)}
         log = self._open_log()
         self._log_offset = log.tell()
         log.write(f"\n===== Khởi động {read_version(self.root)} =====\n".encode("utf-8"))
         log.flush()
         self.proc = subprocess.Popen(
             [self.python, self.script], cwd=str(self.root), env=env, stdin=subprocess.DEVNULL,
-            stdout=log, stderr=subprocess.STDOUT, creationflags=no_window_flags(),
+            stdout=log, stderr=subprocess.STDOUT, creationflags=no_window_flags(), **popen_group_kwargs(),
         )
 
     def wait_ready(
@@ -306,6 +386,12 @@ class AppRunner:
         except OSError:
             return []
         return [ln for ln in data.decode("utf-8", "replace").splitlines() if ln.strip()][-5:]
+
+    def shutdown(self) -> None:
+        """Đóng launcher: dừng app (kể cả khi đang khởi động dở) và không cho start() mở thêm."""
+        with self._lock:
+            self._closed = True
+            self.stop()
 
     def stop(self) -> None:
         if self.proc is not None:

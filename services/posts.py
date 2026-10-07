@@ -129,27 +129,30 @@ def list_posts(
             site_id = site.id if site else -1
         rows: list[PostRow] = []
         tax_cache: dict = {}  # tên danh mục theo (site, loại) — tránh truy vấn lặp cho từng dòng
-        for h in crud.get_post_history(db, site_id=site_id, limit=limit):
-            if statuses and h.status not in statuses:
-                continue
-            d = _detail(h)
+        posts = crud.get_post_history(db, site_id=site_id, limit=limit, statuses=list(statuses or []), light=True)
+        for h in posts:
+            # Không dùng _detail(): danh sách không cần HTML đầy đủ hay kiểm tra từng file ảnh trên đĩa
+            site = h.site.name if h.site else "Unknown"
+            post_type = h.post_type or "product"
+            category_ids = taxonomy_svc.normalize_category_ids(taxonomy_svc.loads_list(h.category_ids_json))
+            tags = [str(t) for t in taxonomy_svc.loads_list(h.tags_json)]
             rows.append(PostRow(
                 id=h.id,
-                product_name=d.product_name,
-                title=d.title,
-                site_name=d.site_name,
-                post_type=d.post_type,
-                status=d.status,
-                image_count=len(d.image_paths),
-                regular_price=d.regular_price,
-                sale_price=d.sale_price,
-                category_ids=d.category_ids,
-                tags=d.tags,
+                product_name=h.product_name or "",
+                title=h.title or "",
+                site_name=site,
+                post_type=post_type,
+                status=h.status or "",
+                image_count=len(_image_paths(h)),
+                regular_price=h.regular_price or "",
+                sale_price=h.sale_price or "",
+                category_ids=category_ids,
+                tags=tags,
                 taxonomy_summary=taxonomy_svc.summarize_selection(
-                    db, d.site_name, taxonomy_svc.scope_of(d.post_type), d.category_ids, d.tags, tax_cache
+                    db, site, taxonomy_svc.scope_of(post_type), category_ids, tags, tax_cache
                 ),
                 created_at=h.created_at,
-                wp_post_url=d.wp_post_url,
+                wp_post_url=h.wp_post_url or "",
             ))
         return rows
 
@@ -235,6 +238,8 @@ def publish_saved_post(
             existing_id = (h.wp_post_id or "").strip()
             if not existing_id:
                 raise ServiceError("Bài này chưa có ID bài WordPress để cập nhật — hãy đăng mới hoặc liên kết với bài có sẵn.")
+            if taxonomy_svc.scope_of(post_type) != taxonomy_svc.scope_of(h.post_type):
+                raise ServiceError("Không thể cập nhật bài có sẵn sang loại nội dung khác (sản phẩm ↔ bài blog) — hãy đăng mới.")
 
         title = title.strip()
         article = {
@@ -263,6 +268,8 @@ def publish_saved_post(
         h.regular_price = regular_price.strip()
         h.sale_price = sale_price.strip()
         h.status = "published" if post_status == "publish" else "draft"
+        # Đồng bộ/thùng rác/cập nhật về sau gọi đúng endpoint (products vs posts) theo loại vừa đăng
+        h.post_type = post_type
         h.wp_post_id = str(res.get("post_id", ""))
         h.wp_post_url = res.get("post_url")
         h.published_at = now_vn()

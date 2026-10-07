@@ -18,11 +18,8 @@ echo "✓ Dùng $($PY --version)"
 # Tạo .env NGAY (trước khi cài thư viện) để dù bước cài có lỗi, file vẫn có sẵn cho người dùng điền.
 STATE=$("$PY" tools/init_env.py || true)
 
-[ -d .venv ] || "$PY" -m venv .venv
-.venv/bin/python -m pip install --upgrade pip -q
-echo "⏳ Đang cài thư viện (vài phút ở lần đầu)..."
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python -c "from launcher.core import requirements_stamp, _stamp_path; from pathlib import Path; p = Path('.'); _stamp_path(p).write_text(requirements_stamp(p), encoding='utf-8')"
+# Tạo .venv + cài thư viện (uv, lỗi thì tự chuyển sang pip) — cùng logic với launcher
+"$PY" tools/install_deps.py
 
 echo
 echo "✓ Cài đặt xong."

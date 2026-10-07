@@ -219,3 +219,75 @@ def test_wait_ready_reports_progress_and_app_log(tmp_path):
     assert r.wait_ready(timeout=6, poll=1, sleep=lambda _s: None, log=lines.append) is False
     assert any("loading gradio" in ln for ln in lines)
     assert any("Đang khởi động" in ln for ln in lines)
+
+
+def test_read_env_handles_windows_bom_and_ansi(tmp_path):
+    (tmp_path / ".env").write_bytes(b"\xef\xbb\xbfPORT=7999\nNOTE=caf\xe9\n")   # BOM của Notepad + 1 byte ANSI
+    env = core.read_env(tmp_path)
+    assert env["PORT"] == "7999" and "NOTE" in env
+    core.update_env(tmp_path, {"PORT": "8001"})
+    assert core.read_env(tmp_path)["PORT"] == "8001"
+    assert (tmp_path / ".env").read_text(encoding="utf-8").count("PORT=") == 1
+
+
+def test_runner_forces_env_port_and_refuses_after_shutdown(tmp_path, monkeypatch):
+    port = _free_port()
+    (tmp_path / ".env").write_text(f"PORT={port}\n", encoding="utf-8")
+    (tmp_path / "app.py").write_text("import os; print('port', os.environ['PORT'], flush=True)\n", encoding="utf-8")
+    monkeypatch.setenv("PORT", "1")                            # PORT sót trong biến môi trường hệ thống
+    r = core.AppRunner(tmp_path, python=sys.executable)
+    r.start()
+    r.proc.wait(timeout=20)
+    r.stop()
+    assert f"port {port}" in (tmp_path / "logs" / "app.log").read_text(encoding="utf-8")
+    r.shutdown()
+    with pytest.raises(core.LauncherError):
+        r.start()
+
+
+def test_install_requirements_prefers_uv_and_falls_back_to_pip(tmp_path, monkeypatch):
+    seen = []
+
+    def fake_run(fail_uv):
+        def run(cmd, cwd, log, env=None):
+            seen.append((cmd[2:4], env))
+            return 1 if (fail_uv and cmd[2] == "uv") else 0
+        return run
+
+    monkeypatch.setattr(core, "run_logged", fake_run(False))
+    core.install_requirements("py", tmp_path, lambda s: None, {})
+    assert [c for c, _ in seen] == [["pip", "install"], ["uv", "pip"]]
+    assert seen[1][1]["UV_LINK_MODE"] == "copy"              # OneDrive / khác ổ đĩa: không dùng hardlink
+
+    seen.clear()
+    monkeypatch.setattr(core, "run_logged", fake_run(True))
+    core.install_requirements("py", tmp_path, lambda s: None, {})
+    assert [c for c, _ in seen][-1] == ["pip", "install"] and len(seen) == 4   # uv lỗi -> pip
+
+    monkeypatch.setattr(core, "run_logged", lambda *a, **k: 1)
+    with pytest.raises(core.LauncherError):
+        core.install_requirements("py", tmp_path, lambda s: None, {})
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows dùng taskkill /T (đã có test riêng)")
+def test_kill_process_tree_also_kills_grandchildren(tmp_path):
+    import os
+    import time
+
+    pid_file = tmp_path / "grandchild.pid"
+    code = (
+        "import subprocess, sys, time\n"
+        f"p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        f"open({str(pid_file)!r}, 'w').write(str(p.pid))\n"
+        "time.sleep(60)\n"
+    )
+    proc = subprocess.Popen([sys.executable, "-c", code], **core.popen_group_kwargs())
+    for _ in range(100):
+        if pid_file.exists() and pid_file.read_text():
+            break
+        time.sleep(0.05)
+    grandchild = int(pid_file.read_text())
+    core.kill_process_tree(proc)
+    time.sleep(0.3)
+    with pytest.raises(ProcessLookupError):
+        os.kill(grandchild, 0)                                  # cháu (vd. frpc) cũng đã bị tắt

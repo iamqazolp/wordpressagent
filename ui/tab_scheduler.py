@@ -6,6 +6,7 @@ import pandas as pd
 import gradio as gr
 
 from services import schedules as sched_svc
+from services.errors import ServiceError
 from ui import taxonomy_records as tr
 
 logger = logging.getLogger(__name__)
@@ -46,9 +47,13 @@ def handle_cancel_job(job_id_input: str) -> tuple[pd.DataFrame, str]:
     except ValueError:
         return fetch_scheduler_data(), "❌ ID phải là một số nguyên hợp lệ."
 
-    if sched_svc.cancel_job(job_id):
+    try:
+        ok = sched_svc.cancel_job(job_id)
+    except ServiceError as e:
+        return fetch_scheduler_data(), f"❌ {e.message}"
+    if ok:
         return fetch_scheduler_data(), f"✅ Đã hủy lịch đăng #{job_id} thành công!"
-    return fetch_scheduler_data(), f"❌ Không tìm thấy hoặc không thể hủy lịch đăng #{job_id}."
+    return fetch_scheduler_data(), f"❌ Không tìm thấy lịch #{job_id}, hoặc lịch không còn ở trạng thái chờ nên không hủy được."
 
 
 def handle_delete_job(job_id_input: str) -> tuple[pd.DataFrame, str]:
@@ -61,7 +66,11 @@ def handle_delete_job(job_id_input: str) -> tuple[pd.DataFrame, str]:
     except ValueError:
         return fetch_scheduler_data(), "❌ ID phải là một số nguyên hợp lệ."
 
-    if sched_svc.delete_job(job_id):
+    try:
+        ok = sched_svc.delete_job(job_id)
+    except ServiceError as e:
+        return fetch_scheduler_data(), f"❌ {e.message}"
+    if ok:
         return fetch_scheduler_data(), f"✅ Đã xóa vĩnh viễn lịch đăng #{job_id}!"
     return fetch_scheduler_data(), f"❌ Không tìm thấy lịch đăng #{job_id} để xóa."
 
@@ -82,9 +91,15 @@ def handle_batch_jobs(picked, action: str, confirm: bool = False) -> tuple:
     if action == "Xoá" and not confirm:
         return fetch_scheduler_data(), "❌ Tick ô xác nhận để xoá.", gr.update()
     fn = sched_svc.delete_job if action == "Xoá" else sched_svc.cancel_job
-    done = sum(1 for i in ids if fn(i))
+    done, errors = 0, []
+    for i in ids:
+        try:
+            done += bool(fn(i))
+        except ServiceError as e:
+            errors.append(f"- #{i}: {e.message}")
     verb = "xoá" if action == "Xoá" else "huỷ"
-    return fetch_scheduler_data(), f"✅ Đã {verb} {done}/{len(ids)} lịch.", gr.update(choices=_job_choices(), value=[])
+    msg = "\n".join([f"✅ Đã {verb} {done}/{len(ids)} lịch.", *errors])
+    return fetch_scheduler_data(), msg, gr.update(choices=_job_choices(), value=[])
 
 
 def build_tab_scheduler() -> dict:

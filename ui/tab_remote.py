@@ -48,9 +48,11 @@ def load_remote(site: str, post_type: str, status: str, search: str, page) -> tu
     return df, f"📥 {site}: **{res.total}** mục · trang {res.page}/{pages} (chỉ đọc, không thay đổi website)."
 
 
-def refresh_sites():
+def refresh_sites(current: str | None = None):
+    """Cập nhật danh sách website khi mở tab; giữ website đang chọn nếu nó vẫn còn."""
     names = site_service.list_site_names()
-    return gr.update(choices=names, value=names[0] if names else None)
+    value = current if current in names else (names[0] if names else None)
+    return gr.update(choices=names, value=value)
 
 
 def build_tab_remote() -> dict:

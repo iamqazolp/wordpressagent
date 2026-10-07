@@ -41,3 +41,20 @@ def test_picker_with_timezone_roundtrips_to_vn_wall_clock():
 def test_parse_timestamp_uses_vn_zone():
     ts = datetime(2026, 12, 14, 5, 0, tzinfo=timezone.utc).timestamp()
     assert parse_scheduled_datetime(ts) == datetime(2026, 12, 14, 12, 0)
+
+
+def test_vn_to_utc_iso():
+    from core.timeutil import vn_to_utc_iso
+    assert vn_to_utc_iso(None) is None
+
+    # Naive datetime GMT+7 (14:30 GMT+7 -> 07:30 UTC)
+    dt_naive = datetime(2026, 12, 14, 14, 30, 0)
+    assert vn_to_utc_iso(dt_naive) == "2026-12-14T07:30:00"
+
+    # Aware datetime GMT+7
+    dt_aware = datetime(2026, 12, 14, 14, 30, 0, tzinfo=VN_TZ)
+    assert vn_to_utc_iso(dt_aware) == "2026-12-14T07:30:00"
+
+    # Sang ngày mới ở VN nhưng vẫn ở ngày cũ UTC
+    dt_early = datetime(2026, 1, 1, 3, 0, 0)
+    assert vn_to_utc_iso(dt_early) == "2025-12-31T20:00:00"

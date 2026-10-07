@@ -1,3 +1,6 @@
+import pytest
+
+
 def test_upload_images_reports_reason_on_401(tmp_path, monkeypatch):
     from core import wp_client
 
@@ -122,3 +125,156 @@ def test_publish_product_passes_query_param_auth(monkeypatch):
     wp_client.publish_product("Product", "<p>x</p>", [], cfg)
     assert captured_params.get("consumer_key") == "my_ck"
     assert captured_params.get("consumer_secret") == "my_cs"
+
+
+def test_publish_product_future_status_includes_date_created_gmt(monkeypatch):
+    from datetime import datetime
+    from core import wp_client
+
+    captured_payload = {}
+
+    class FakeResp:
+        status_code = 201
+        text = '{"id": 10, "permalink": "https://x/p/10"}'
+
+        def json(self):
+            return {"id": 10, "permalink": "https://x/p/10"}
+
+        def raise_for_status(self):
+            pass
+
+    def fake_post(url, **kwargs):
+        captured_payload.update(kwargs.get("json", {}))
+        return FakeResp()
+
+    monkeypatch.setattr(wp_client.requests, "post", fake_post)
+    cfg = {"url": "https://x.test", "client_key": "k", "client_secret": "s"}
+    sched_time = datetime(2026, 12, 14, 14, 30, 0)
+    res = wp_client.publish_product(
+        title="Future Product",
+        html_content="<p>content</p>",
+        uploaded_images=[],
+        site_config=cfg,
+        status="future",
+        scheduled_time=sched_time,
+    )
+    assert res["post_id"] == 10
+    assert captured_payload["status"] == "future"
+    assert captured_payload["date_created_gmt"] == "2026-12-14T07:30:00"
+
+
+def test_publish_post_future_status_includes_date_gmt(monkeypatch):
+    from datetime import datetime
+    from core import wp_client
+
+    captured_payload = {}
+
+    class FakeResp:
+        status_code = 201
+        text = '{"id": 20, "link": "https://x/b/20"}'
+
+        def json(self):
+            return {"id": 20, "link": "https://x/b/20"}
+
+        def raise_for_status(self):
+            pass
+
+    def fake_post(url, **kwargs):
+        captured_payload.update(kwargs.get("json", {}))
+        return FakeResp()
+
+    monkeypatch.setattr(wp_client.requests, "post", fake_post)
+    cfg = {"url": "https://x.test", "wp_user": "u", "wp_app_password": "p"}
+    sched_time = datetime(2026, 12, 14, 14, 30, 0)
+    res = wp_client.publish_post(
+        title="Future Post",
+        html_content="<p>content</p>",
+        uploaded_images=[],
+        site_config=cfg,
+        status="future",
+        scheduled_time=sched_time,
+    )
+    assert res["post_id"] == 20
+    assert captured_payload["status"] == "future"
+    assert captured_payload["date_gmt"] == "2026-12-14T07:30:00"
+
+
+def test_update_item_status(monkeypatch):
+    from core import wp_client
+
+    captured = {}
+
+    class FakeResp:
+        status_code = 200
+        text = '{"id": 15, "status": "draft", "name": "Item 15", "permalink": "https://x/15"}'
+
+        def json(self):
+            return {"id": 15, "status": "draft", "name": "Item 15", "permalink": "https://x/15"}
+
+        def raise_for_status(self):
+            pass
+
+    def fake_put(url, **kwargs):
+        captured["url"] = url
+        captured["json"] = kwargs.get("json")
+        return FakeResp()
+
+    monkeypatch.setattr(wp_client.requests, "put", fake_put)
+    cfg = {"url": "https://x.test", "client_key": "k", "client_secret": "s", "wp_user": "u", "wp_app_password": "p"}
+    res = wp_client.update_item_status(cfg, "product", 15, "draft")
+    assert res["id"] == 15
+    assert res["status"] == "draft"
+    assert captured["json"] == {"status": "draft"}
+    assert captured["url"] == "https://x.test/wp-json/wc/v3/products/15"
+
+
+def test_update_item_taxonomy_payload_per_scope(monkeypatch):
+    from core import wp_client
+
+    sent = []
+
+    class FakeResp:
+        status_code = 200
+
+        def json(self):
+            return {"id": 3, "status": "future"}
+
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr(wp_client.requests, "put", lambda url, **kw: sent.append((url, kw.get("json"))) or FakeResp())
+    cfg = {"url": "https://x.test", "client_key": "k", "client_secret": "s", "wp_user": "u", "wp_app_password": "p"}
+    wp_client.update_item_taxonomy(cfg, "product", 3, [1, 2], [9])
+    wp_client.update_item_taxonomy(cfg, "post", 3, [1, 2], [9])
+    assert sent[0] == ("https://x.test/wp-json/wc/v3/products/3",
+                       {"categories": [{"id": 1}, {"id": 2}], "tags": [{"id": 9}]})
+    assert sent[1] == ("https://x.test/wp-json/wp/v2/posts/3", {"categories": [1, 2], "tags": [9]})
+
+
+def test_create_is_not_retried_after_read_timeout(monkeypatch):
+    import requests
+    from core import wp_client
+
+    calls = []
+
+    def fake_post(url, **kw):
+        calls.append(url)
+        raise requests.exceptions.ReadTimeout("server slow")
+
+    monkeypatch.setattr(wp_client.requests, "post", fake_post)
+    monkeypatch.setattr(wp_client.publish_post.retry, "sleep", lambda s: None)
+    cfg = {"url": "https://x.test", "client_key": "k", "client_secret": "s", "wp_user": "u", "wp_app_password": "p"}
+    with pytest.raises(requests.exceptions.ReadTimeout):
+        wp_client.publish_post("T", "<p>x</p>", [], cfg)
+    assert len(calls) == 1                                    # không gửi lại -> không sinh bài trùng
+
+    calls.clear()
+
+    def refused(url, **kw):
+        calls.append(url)
+        raise requests.exceptions.ConnectionError("refused")
+
+    monkeypatch.setattr(wp_client.requests, "post", refused)
+    with pytest.raises(requests.exceptions.ConnectionError):
+        wp_client.publish_post("T", "<p>x</p>", [], cfg)
+    assert len(calls) == 2                                    # chưa tới máy chủ -> thử lại an toàn

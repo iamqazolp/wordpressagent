@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 DAYS = 30
 _BUCKET_LABELS = {"published": "✅ Đã đăng", "saved": "💾 Đã lưu nháp", "failed": "❌ Lỗi"}
 _STATUS_LABELS = {
-    "saved": "💾 Đã lưu nháp", "published": "✅ Đã đăng", "draft": "📝 Nháp WP", "failed": "❌ Lỗi",
+    "saved": "💾 Đã lưu nháp", "published": "✅ Đã đăng", "draft": "📝 Nháp WP", "scheduled": "⏰ Đã hẹn giờ", "failed": "❌ Lỗi",
     "trashed": "🗑️ Thùng rác WP", "missing": "❓ Không còn trên WP",
 }
 _DAILY_COLS = ["Ngày", "Loại", "Số bài"]

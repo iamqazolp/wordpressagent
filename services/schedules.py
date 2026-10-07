@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from core import taxonomy_service
@@ -55,6 +55,7 @@ class ScheduleResult:
     scheduled_time: datetime
     site_names: list[str]
     post_status: str
+    errors: dict[str, str] = field(default_factory=dict)   # site -> lỗi tạo bài hẹn giờ (sẽ thử lại khi đến giờ)
 
 
 def schedule_post(
@@ -90,7 +91,8 @@ def schedule_post(
         sale_price=sale_price,
         image_files=image_paths,
     )
-    return ScheduleResult(job_id, product_name, scheduled_time, list(articles.keys()), post_status)
+    errors = core_scheduler.get_schedule_errors(job_id) if post_status == "publish" else {}
+    return ScheduleResult(job_id, product_name, scheduled_time, list(articles.keys()), post_status, errors)
 
 
 # ── Danh sách / hủy / xóa ────────────────────────────────────────────────────
@@ -155,14 +157,22 @@ def parse_job_id(raw) -> int | None:
 
 
 def cancel_job(job_id: int) -> bool:
-    return bool(core_scheduler.cancel_scheduled_job(job_id))
+    """Hủy lịch còn chờ. False nếu không có/không còn chờ; ServiceError nếu không đổi được bài trên WordPress."""
+    try:
+        return bool(core_scheduler.cancel_scheduled_job(job_id))
+    except core_scheduler.ScheduleSyncError as e:
+        raise ServiceError(str(e)) from e
 
 
 def delete_job(job_id: int) -> bool:
-    """Hủy job trên APScheduler (nếu còn) rồi xóa bản ghi. True nếu có bản ghi bị xóa."""
-    core_scheduler.cancel_scheduled_job(job_id)
-    with session_scope() as db:
-        return bool(crud.delete_scheduled_post(db, job_id))
+    """
+    Xóa lịch. Lịch còn chờ: hủy và đưa bài hẹn giờ trên WordPress vào thùng rác; lịch đã chạy chỉ xóa bản ghi.
+    True nếu có bản ghi bị xóa; ServiceError nếu không đổi được bài trên WordPress.
+    """
+    try:
+        return bool(core_scheduler.delete_scheduled_job(job_id))
+    except core_scheduler.ScheduleSyncError as e:
+        raise ServiceError(str(e)) from e
 
 
 # ── Danh mục & tag của lịch còn chờ ──────────────────────────────────────────
@@ -186,13 +196,39 @@ def _job_art(job, site: str) -> dict:
 
 
 def _write_job_art(db, job, site: str, **fields) -> None:
-    """Ghi đè một số trường của bài cho `site` trong article_data_json (giữ nguyên phần còn lại)."""
+    """
+    Ghi đè một số trường của bài cho `site` trong article_data_json (giữ nguyên phần còn lại).
+    Bài đã được tạo dạng hẹn giờ trên WordPress (post_id) thì cập nhật luôn danh mục/tag trên đó;
+    WordPress lỗi -> ServiceError và không lưu gì.
+    """
     articles = _job_articles(job)
     art = articles.setdefault(site, {})
     art.update(fields)
     art["category_scope"] = scope_of(job.post_type)
+    if art.get("post_id"):
+        _push_job_taxonomy(db, job, site, art)
     job.article_data_json = json.dumps(articles, ensure_ascii=False)
     db.commit()
+
+
+def _push_job_taxonomy(db, job, site: str, art: dict) -> None:
+    from core import wp_client
+
+    site_obj = crud.get_site(db, int(art["site_id"])) if art.get("site_id") else None
+    site_obj = site_obj or crud.get_site_by_name(db, site)
+    cfg = crud.get_site_config(db, site_obj.id) if site_obj else None
+    if not cfg:
+        raise ServiceError(f"Không tìm thấy cấu hình website '{site}'.")
+    tag_ids, warning = taxonomy_service.resolve_tag_ids(cfg, job.post_type, art.get("tags") or [])
+    if warning and not tag_ids:
+        raise ServiceError(f"Không cập nhật được tag trên WordPress: {warning}")
+    try:
+        wp_client.update_item_taxonomy(
+            cfg, taxonomy_service.scope_for_post_type(job.post_type), art["post_id"],
+            taxonomy_service.effective_category_ids(art, job.post_type), tag_ids,
+        )
+    except Exception as e:
+        raise ServiceError(f"Không cập nhật được bài #{art['post_id']} trên WordPress: {e}") from e
 
 
 def _job_context(db, job_id_raw, site: str | None):
@@ -329,11 +365,18 @@ def schedule_post_per_site(
     sale_price: str = "",
 ) -> list[ScheduleResult]:
     """Hẹn giờ riêng cho từng website: mỗi website một lịch với giờ của nó. Website không có giờ bị bỏ qua."""
+    picked = {site: when for site, when in times.items() if site in articles and when is not None}
+    # Kiểm tra hết trước khi tạo lịch nào: tránh lịch "mồ côi" bị tạo trùng khi người dùng sửa giờ rồi gửi lại
+    now = now_vn()
+    late = [f"{site} ({when.strftime('%d/%m/%Y %H:%M')})" for site, when in picked.items() if when <= now]
+    if late:
+        raise ServiceError(
+            f"Giờ hẹn phải ở trong tương lai (sau {now.strftime('%d/%m/%Y %H:%M')} {TZ_LABEL}): {', '.join(late)}."
+        )
     results = []
-    for site, when in times.items():
-        if site in articles and when is not None:
-            results.append(schedule_post({site: articles[site]}, image_paths, post_status, post_type, when,
-                                         regular_price, sale_price))
+    for site, when in picked.items():
+        results.append(schedule_post({site: articles[site]}, image_paths, post_status, post_type, when,
+                                     regular_price, sale_price))
     if not results:
         raise ServiceError("Chưa có website nào được chọn giờ đăng.")
     return results

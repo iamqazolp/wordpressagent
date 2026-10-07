@@ -383,3 +383,44 @@ def test_scheduler_batch_cancel_and_delete(world, monkeypatch):
     assert tab_scheduler.handle_batch_jobs(picks, "Xoá")[1].startswith("❌ Tick")
     df, msg, _ = tab_scheduler.handle_batch_jobs(picks, "Xoá", True)
     assert msg == "✅ Đã xoá 3/3 lịch." and len(df) == 0
+
+
+def test_refresh_site_pickers_follows_current_sites(monkeypatch):
+    monkeypatch.setattr(tab_create.site_service, "list_site_names", lambda: ["shop", "blog-moi"])
+    names, *updates = tab_create.refresh_site_pickers(4)
+    assert names == ["shop", "blog-moi"]
+    assert [u.get("visible") for u in updates] == [True, True, False, False]
+    assert updates[1]["label"].startswith("blog-moi")
+
+
+def test_bulk_site_list_not_wiped_by_empty_update():
+    import gradio as gr
+    from ui import main_ui
+
+    # gr.update() rỗng (lỗi nhập liệu) không được biến thành choices=[] / value=[]
+    mirrored = main_ui._mirror_site_update(gr.update())
+    assert "choices" not in mirrored and "value" not in mirrored
+    full = main_ui._mirror_site_update(gr.update(choices=["a"], value=["a"]))
+    assert full["choices"] == ["a"] and full["value"] == ["a"]
+
+
+def test_remote_tab_keeps_selected_site(monkeypatch):
+    from ui import tab_remote
+
+    monkeypatch.setattr(tab_remote.site_service, "list_site_names", lambda: ["a", "b"])
+    assert tab_remote.refresh_sites("b")["value"] == "b"
+    assert tab_remote.refresh_sites("da-xoa")["value"] == "a"
+    assert tab_remote.refresh_sites()["value"] == "a"
+
+
+def test_history_view_queries_once(monkeypatch):
+    from types import SimpleNamespace
+    from ui import tab_history
+
+    calls = []
+    row = SimpleNamespace(id=7, product_name="Quạt", title="T", site_name="shop", post_type="product", status="saved",
+                          image_count=0, regular_price="", sale_price="", taxonomy_summary="-", created_at=None,
+                          wp_post_url="")
+    monkeypatch.setattr(tab_history.post_service, "list_posts", lambda *a, **k: calls.append(a) or [row])
+    df, choices = tab_history.fetch_history_view()
+    assert len(calls) == 1 and list(df["ID"]) == [7] and choices[0].startswith("#7 - Quạt")

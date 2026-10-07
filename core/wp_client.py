@@ -3,10 +3,13 @@ core/wp_client.py
 Đăng bài lên WordPress qua REST API và upload ảnh.
 """
 from __future__ import annotations
+from datetime import datetime
 import concurrent.futures
 import logging
 import mimetypes
 import re
+import shutil
+import tempfile
 import threading
 import unicodedata
 from pathlib import Path
@@ -78,6 +81,8 @@ def _wc_params(site_config: dict, params: dict | None = None) -> dict:
 
 
 def _should_retry_http(exception: BaseException) -> bool:
+    if getattr(exception, "_no_retry", False):
+        return False
     if isinstance(exception, ValueError):
         return False
     if isinstance(exception, requests.exceptions.HTTPError):
@@ -85,6 +90,21 @@ def _should_retry_http(exception: BaseException) -> bool:
             return False
     return True
 
+
+
+def _mark_create_unsafe_to_retry(exc: BaseException) -> None:
+    """
+    Lệnh POST tạo mới không idempotent: hết giờ đọc / lỗi 5xx có thể xảy ra SAU KHI WordPress đã tạo bài,
+    gửi lại sẽ sinh bài trùng. Chỉ thử lại khi chắc chắn yêu cầu chưa tới máy chủ (không kết nối được).
+    """
+    if isinstance(exc, requests.exceptions.ConnectTimeout):
+        return
+    if isinstance(exc, requests.exceptions.ConnectionError) and not isinstance(exc, requests.exceptions.ReadTimeout):
+        return
+    try:
+        exc._no_retry = True
+    except AttributeError:
+        pass
 
 
 def ascii_filename(name: str) -> str:
@@ -185,6 +205,19 @@ def upload_images(
     results: list[dict | None] = [None] * len(image_paths)
 
     def _upload_single(idx: int, path_str: str) -> None:
+        # Thư mục riêng cho từng ảnh: nhiều site (mỗi site một logo) xử lý cùng ảnh song song không ghi đè
+        # file của nhau (trên Windows ghi trùng file còn lỗi PermissionError); tên file trên WP vẫn giữ nguyên.
+        work_dir = None
+        if optimize:
+            DEFAULT_PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+            work_dir = Path(tempfile.mkdtemp(prefix="upload_", dir=DEFAULT_PROCESSED_DIR))
+        try:
+            _upload_one(idx, path_str, work_dir)
+        finally:
+            if work_dir:
+                shutil.rmtree(work_dir, ignore_errors=True)
+
+    def _upload_one(idx: int, path_str: str, work_dir: Path | None) -> None:
         path = Path(path_str)
         if not path.exists():
             logger.warning(f"File không tồn tại: {path_str}")
@@ -197,7 +230,7 @@ def upload_images(
             try:
                 proc_res = process_single_image(
                     input_path=path,
-                    output_dir=DEFAULT_PROCESSED_DIR,
+                    output_dir=work_dir,
                     options={
                         "max_width": 1200,
                         "max_height": 1200,
@@ -206,7 +239,7 @@ def upload_images(
                         "remove_bg": remove_bg,
                         "watermark_path": (site_config.get("watermark_path") or None) if apply_watermark else None,
                         "watermark_position": site_config.get("watermark_position", "bottom-right"),
-                        "watermark_opacity": float(site_config.get("watermark_opacity", 0.7) or 0.7),
+                        "watermark_opacity": _opacity(site_config.get("watermark_opacity")),
                     },
                 )
                 if proc_res.get("success") and proc_res.get("output_path"):
@@ -263,6 +296,7 @@ def upload_images(
                     "id": data["id"],
                     "url": data["source_url"],
                     "filename": path.name,
+                    "index": idx,   # vị trí trong danh sách gốc: ảnh lỗi không làm lệch [IMAGE_PLACEHOLDER_N]
                 }
                 results[idx] = result
                 logger.info(f"✓ Upload thành công: {path.name} → {result['url']}")
@@ -286,6 +320,14 @@ def upload_images(
             fut.result()
 
     return [r for r in results if r is not None]
+
+
+def _opacity(value, default: float = 0.7) -> float:
+    """Độ mờ watermark; 0 là giá trị hợp lệ (không được thay bằng mặc định)."""
+    try:
+        return default if value is None or value == "" else float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def build_figure_html(image_data: dict, caption: str = "") -> str:
@@ -375,6 +417,7 @@ def publish_product(
     short_description: str = "",
     tag_ids: list[int] | None = None,
     existing_wp_id: int | str | None = None,
+    scheduled_time: datetime | None = None,
 ) -> dict:
     """
     Đăng sản phẩm lên WooCommerce qua REST API (/wp-json/wc/v3/products).
@@ -400,6 +443,12 @@ def publish_product(
         "short_description": short_description,
         "status": status,
     }
+
+    if status == "future" and scheduled_time:
+        from core.timeutil import vn_to_utc_iso
+        utc_iso = vn_to_utc_iso(scheduled_time)
+        if utc_iso:
+            payload["date_created_gmt"] = utc_iso
 
     clean_reg = _clean_price(regular_price)
     if clean_reg:
@@ -442,9 +491,13 @@ def publish_product(
         response.raise_for_status()
     except requests.exceptions.HTTPError as e:
         logger.error(f"Lỗi HTTP khi tạo sản phẩm: {e}\n{response.text[:500]}")
+        if not existing_wp_id:
+            _mark_create_unsafe_to_retry(e)
         raise
     except Exception as e:
         logger.error(f"Lỗi kết nối khi tạo sản phẩm: {e}")
+        if not existing_wp_id:
+            _mark_create_unsafe_to_retry(e)
         raise
 
     data = response.json()
@@ -473,6 +526,7 @@ def publish_post(
     category_ids: list[int] | None = None,
     tag_ids: list[int] | None = None,
     existing_wp_id: int | str | None = None,
+    scheduled_time: datetime | None = None,
 ) -> dict:
     """
     Đăng bài viết thông thường (Blog Post) lên WordPress qua REST API (/wp-json/wp/v2/posts).
@@ -490,6 +544,12 @@ def publish_post(
         "content": final_html,
         "status":  status,
     }
+
+    if status == "future" and scheduled_time:
+        from core.timeutil import vn_to_utc_iso
+        utc_iso = vn_to_utc_iso(scheduled_time)
+        if utc_iso:
+            payload["date_gmt"] = utc_iso
 
     if category_ids:
         payload["categories"] = category_ids
@@ -516,9 +576,13 @@ def publish_post(
         response.raise_for_status()
     except requests.exceptions.HTTPError as e:
         logger.error(f"Lỗi HTTP khi đăng bài: {e}\n{response.text[:500]}")
+        if not existing_wp_id:
+            _mark_create_unsafe_to_retry(e)
         raise
     except Exception as e:
         logger.error(f"Lỗi kết nối khi đăng bài: {e}")
+        if not existing_wp_id:
+            _mark_create_unsafe_to_retry(e)
         raise
 
     data = response.json()
@@ -554,10 +618,16 @@ def _replace_placeholders(html_content: str, images: list[dict]) -> str:
         html_content = re.sub(r"\[IMAGE_PLACEHOLDER_\d+\]", "", html_content)
         return html_content
 
+    by_index = {img["index"]: img for img in images if isinstance(img.get("index"), int)}
+    last_index = max(by_index) if by_index else -1
+
     def replace_one(match: re.Match) -> str:
         # Lấy số N trong [IMAGE_PLACEHOLDER_N]
         n = int(match.group(1)) - 1  # convert sang 0-based
-        if 0 <= n < len(images):
+        if by_index and 0 <= n <= last_index:
+            # Ảnh thứ N upload lỗi -> bỏ placeholder, không lấy ảnh khác thế chỗ
+            return build_figure_html(by_index[n]) if n in by_index else ""
+        if not by_index and 0 <= n < len(images):
             return build_figure_html(images[n])
         # Nếu N vượt quá số ảnh → dùng ảnh cuối
         return build_figure_html(images[-1])
@@ -857,3 +927,29 @@ def trash_item(site_config: dict, scope: str, wp_id: int | str) -> dict:
     item = _normalize_item(response.json(), scope)
     item["status"] = item["status"] or "trash"
     return item
+
+
+def update_item(site_config: dict, scope: str, wp_id: int | str, fields: dict) -> dict:
+    """Cập nhật một số trường của bài viết/sản phẩm có sẵn trên WordPress (PUT, không tạo mới)."""
+    url, auth = _items_url_and_auth(site_config, scope)
+    params = _wc_params(site_config) if _is_product_scope(scope) else None
+    _, _, s_put, _ = _req_callers()
+    resp = _safe_call(s_put, f"{url}/{wp_id}", auth=auth, json=fields, params=params, timeout=20)
+    resp.raise_for_status()
+    return _normalize_item(resp.json(), scope)
+
+
+def update_item_status(site_config: dict, scope: str, wp_id: int | str, new_status: str) -> dict:
+    """Cập nhật trạng thái (status) của bài viết/sản phẩm trên WordPress (vd đổi từ future sang draft)."""
+    return update_item(site_config, scope, wp_id, {"status": new_status})
+
+
+def update_item_taxonomy(
+    site_config: dict, scope: str, wp_id: int | str, category_ids: list[int], tag_ids: list[int]
+) -> dict:
+    """Ghi đè danh mục và tag của bài/sản phẩm có sẵn (WooCommerce cần dạng [{"id": ..}])."""
+    if _is_product_scope(scope):
+        fields = {"categories": [{"id": c} for c in category_ids], "tags": [{"id": t} for t in tag_ids]}
+    else:
+        fields = {"categories": list(category_ids), "tags": list(tag_ids)}
+    return update_item(site_config, scope, wp_id, fields)

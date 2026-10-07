@@ -226,3 +226,29 @@ class TestSearchArticles:
         assert results[0]["source"] == "manual"
         assert results[1]["url"] == "https://serp1.com"
         assert results[1]["source"] == "google"
+
+
+def test_search_returns_without_waiting_for_slow_duckduckgo(monkeypatch):
+    import time
+    from core import searcher
+
+    serp = [{"url": f"https://a{i}.vn", "title": "t", "source": "google"} for i in range(5)]
+    monkeypatch.setattr(settings, "SERP_API_KEY", "k", raising=False)
+    monkeypatch.setattr(settings, "SEARCH_RESULT_COUNT", 5, raising=False)
+    monkeypatch.setattr(searcher, "_search_via_serpapi", lambda name, limit=5: serp)
+    monkeypatch.setattr(searcher, "_search_via_duckduckgo", lambda name, limit=5: time.sleep(3) or [])
+    t = time.monotonic()
+    assert searcher.search_articles("Quạt") == serp
+    assert time.monotonic() - t < 1.0
+
+
+def test_search_keeps_late_duckduckgo_results_when_serpapi_empty(monkeypatch):
+    import time
+    from core import searcher
+
+    ddg = [{"url": "https://d.vn", "title": "t", "source": "duckduckgo"}]
+    monkeypatch.setattr(settings, "SERP_API_KEY", "k", raising=False)
+    monkeypatch.setattr(settings, "SERP_TIMEOUT", 8, raising=False)
+    monkeypatch.setattr(searcher, "_search_via_serpapi", lambda name, limit=5: [])
+    monkeypatch.setattr(searcher, "_search_via_duckduckgo", lambda name, limit=5: time.sleep(2.6) or ddg)
+    assert searcher.search_articles("Quạt") == ddg            # trước đây bị bỏ vì DuckDuckGo > 2.5s

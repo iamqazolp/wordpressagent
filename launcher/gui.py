@@ -162,12 +162,17 @@ class LauncherApp:
                 elif ev[0] == "done":
                     self.busy = False
                     self.progress.stop()
-                    ev[1](ev[2], ev[3])
+                    try:
+                        ev[1](ev[2], ev[3])
+                    except Exception as e:  # lỗi ở bước sau không được làm đứng cửa sổ
+                        self._append_log(f"✗ Lỗi: {e}")
+                        self.status_var.set(f"❌ Lỗi: {e}")
                     self._refresh_buttons()
         except queue.Empty:
             pass
-        if not self._closing:
-            self.win.after(100, self._pump)
+        finally:
+            if not self._closing:
+                self.win.after(100, self._pump)
 
     def _poll_loop(self) -> None:
         import time
@@ -333,7 +338,11 @@ class LauncherApp:
         if self.runner.alive():
             if not messagebox.askyesno("Thoát", "Ứng dụng đang chạy. Tắt ứng dụng và thoát?"):
                 return
-            self.runner.stop()
+        elif self.busy:
+            if not messagebox.askyesno("Thoát", "Đang cài đặt/khởi động. Dừng lại và thoát?"):
+                return
+        core.stop_all_children()
+        self.runner.shutdown()
         self._closing = True
         self.win.destroy()
 

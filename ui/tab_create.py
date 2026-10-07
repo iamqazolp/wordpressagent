@@ -315,6 +315,8 @@ def schedule_post_ui(
             f"- `#{res.job_id}` · {', '.join(res.site_names)} · "
             f"{res.scheduled_time.strftime('%H:%M %d/%m/%Y')} ({TZ_LABEL}) · đăng dạng `{res.post_status}`"
         )
+        for site, err in res.errors.items():
+            lines.append(f"  - ⚠️ {site}: chưa tạo được bài hẹn giờ trên WordPress ({err}) — sẽ thử đăng lại khi đến giờ.")
     return "\n".join(lines)
 
 
@@ -381,6 +383,19 @@ def on_save_html_edit(new_html, current_site, articles_state, image_files):
         articles_state[current_site]['preview_html'] = make_preview_html(new_html, image_paths)
         gr.Info("✅ Đã lưu thay đổi nội dung HTML!")
     return articles_state
+
+
+MAX_SITE_PICKERS = 20
+
+
+def refresh_site_pickers(n_pickers: int) -> tuple:
+    """(danh sách website hiện tại, cập nhật cho từng ô giờ): ô thứ i mang tên website thứ i, ô thừa bị ẩn."""
+    names = site_service.list_site_names()[:n_pickers]
+    updates = [
+        gr.update(label=f"{names[i]} ({TZ_LABEL})", visible=True) if i < len(names) else gr.update(visible=False)
+        for i in range(n_pickers)
+    ]
+    return (names, *updates)
 
 
 def build_tab_create(db_session=None) -> dict:
@@ -469,13 +484,17 @@ def build_tab_create(db_session=None) -> dict:
                     value=default_init_time,
                     include_time=True,
                 )
+                # Dựng sẵn một số ô cố định rồi ẩn/hiện + đổi nhãn theo danh sách website hiện tại
+                # (site thêm/đổi tên sau khi mở app vẫn có ô chọn giờ, xem refresh_site_pickers)
+                site_names_state = gr.State(site_names)
                 with gr.Group(visible=False) as site_times_box:
                     site_time_pickers = [
                         gr.DateTime(
-                            label=f"{name} ({TZ_LABEL})", type="datetime", timezone=TZ_NAME,
-                            value=default_init_time, include_time=True,
+                            label=f"{site_names[i]} ({TZ_LABEL})" if i < len(site_names) else "",
+                            type="datetime", timezone=TZ_NAME,
+                            value=default_init_time, include_time=True, visible=i < len(site_names),
                         )
-                        for name in site_names
+                        for i in range(max(MAX_SITE_PICKERS, len(site_names)))
                     ]
                 schedule_time_preview = gr.Markdown(value=format_time_preview(default_init_time))
                 schedule_btn = gr.Button("Đặt lịch", variant="primary")
@@ -535,6 +554,9 @@ def build_tab_create(db_session=None) -> dict:
         fn=lambda m: (gr.update(visible=(m == "Cùng một giờ")), gr.update(visible=(m != "Cùng một giờ"))),
         inputs=[schedule_mode],
         outputs=[schedule_datetime_picker, site_times_box],
+    ).then(
+        fn=lambda: refresh_site_pickers(len(site_time_pickers)),
+        outputs=[site_names_state, *site_time_pickers],
     )
     schedule_datetime_picker.change(
         fn=format_time_preview,
@@ -597,6 +619,7 @@ def build_tab_create(db_session=None) -> dict:
         'schedule_mode': schedule_mode,
         'site_time_pickers': site_time_pickers,
         'site_names': site_names,
+        'site_names_state': site_names_state,
         'schedule_result': schedule_result,
         'img_optimize_chk': img_optimize_chk,
         'img_watermark_chk': img_watermark_chk,

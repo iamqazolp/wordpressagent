@@ -3,6 +3,7 @@ core/pipeline.py
 Orchestrator for running the end-to-end flow.
 """
 from __future__ import annotations
+from datetime import datetime
 import concurrent.futures
 import logging
 import threading
@@ -126,6 +127,7 @@ def publish_one(
     remove_bg: bool = False,
     existing_wp_id: int | str | None = None,
     apply_watermark: bool = True,
+    scheduled_time: datetime | None = None,
 ) -> dict:
     """
     Đăng MỘT bài lên MỘT website: tải ảnh -> tra category/tag -> tạo sản phẩm/bài viết.
@@ -195,6 +197,7 @@ def publish_one(
                 category_ids=category_ids,
                 tag_ids=tag_ids,
                 existing_wp_id=existing_wp_id,
+                scheduled_time=scheduled_time,
             )
         else:
             if not site_config.get('wp_user'):
@@ -206,6 +209,7 @@ def publish_one(
                 category_ids=category_ids,
                 tag_ids=tag_ids,
                 existing_wp_id=existing_wp_id,
+                scheduled_time=scheduled_time,
             )
         return {
             'site_name': site_name, 'success': True,
@@ -234,6 +238,7 @@ def publish_articles(
     optimize_images: bool = True,
     remove_bg: bool = False,
     apply_watermark: bool = True,
+    scheduled_time: datetime | None = None,
 ) -> list[dict]:
     """
     Publish articles to WordPress sites.
@@ -261,6 +266,7 @@ def publish_articles(
             optimize_images=optimize_images,
             remove_bg=remove_bg,
             apply_watermark=apply_watermark,
+            scheduled_time=scheduled_time,
         )
         if progress_callback:
             with progress_lock:

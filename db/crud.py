@@ -6,7 +6,7 @@ import os
 import shutil
 from pathlib import Path
 from cryptography.fernet import Fernet
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer, joinedload
 from sqlalchemy import desc
 
 from datetime import datetime, timedelta
@@ -217,14 +217,15 @@ def migrate_from_json(db: Session, json_path: Path) -> int:
         if not json_path.exists():
             return 0
             
-        with open(json_path, 'r', encoding='utf-8') as f:
+        with open(json_path, 'r', encoding='utf-8-sig') as f:  # Notepad trên Windows có thể thêm BOM
             data = json.load(f)
             
         count = 0
+        failed: list[str] = []
         for name, config in data.items():
             existing = get_site_by_name(db, name)
             if not existing:
-                create_site(
+                created = create_site(
                     db,
                     name=name,
                     url=config.get('url', ''),
@@ -233,8 +234,15 @@ def migrate_from_json(db: Session, json_path: Path) -> int:
                     wp_user=config.get('wp_user', ''),
                     wp_app_password=config.get('wp_app_password', '')
                 )
-                count += 1
-                
+                if created:
+                    count += 1
+                else:
+                    failed.append(name)
+
+        if failed:
+            # Giữ nguyên sites.json để lần khởi động sau thử lại (site đã nhập thì được bỏ qua)
+            logger.error(f"Không nhập được website từ {json_path}: {', '.join(failed)}. Sẽ thử lại lần sau.")
+            return count
         shutil.move(str(json_path), str(bak_path))
         logger.info(f"Đã di chuyển {json_path} sang {bak_path}")
         return count
@@ -326,11 +334,22 @@ def update_post_history(db: Session, history_id: int, **kwargs) -> PostHistory |
         logger.error(f"Lỗi khi cập nhật post history: {e}")
         return None
 
-def get_post_history(db: Session, site_id: int = None, limit: int = 50, offset: int = 0) -> list[PostHistory]:
+def get_post_history(
+    db: Session, site_id: int = None, limit: int = 50, offset: int = 0,
+    statuses: list[str] | tuple[str, ...] | None = None, light: bool = False,
+) -> list[PostHistory]:
+    """
+    Bài mới nhất trước. `statuses` lọc NGAY trong SQL (lọc sau LIMIT sẽ làm mất bài cũ hơn).
+    `light=True` cho danh sách: không tải nội dung HTML (lớn) và nạp sẵn site (tránh 1 truy vấn mỗi dòng).
+    """
     try:
         query = db.query(PostHistory)
+        if light:
+            query = query.options(defer(PostHistory.raw_html), joinedload(PostHistory.site))
         if site_id is not None:
             query = query.filter(PostHistory.site_id == site_id)
+        if statuses:
+            query = query.filter(PostHistory.status.in_(list(statuses)))
         return query.order_by(desc(PostHistory.created_at)).offset(offset).limit(limit).all()
     except Exception as e:
         logger.error(f"Lỗi khi lấy post history: {e}")
@@ -338,7 +357,10 @@ def get_post_history(db: Session, site_id: int = None, limit: int = 50, offset: 
 
 def get_recent_posts(db: Session, limit: int = 10) -> list[PostHistory]:
     try:
-        return db.query(PostHistory).order_by(desc(PostHistory.created_at)).limit(limit).all()
+        return (
+            db.query(PostHistory).options(defer(PostHistory.raw_html))
+            .order_by(desc(PostHistory.created_at)).limit(limit).all()
+        )
     except Exception as e:
         logger.error(f"Lỗi khi lấy recent posts: {e}")
         return []

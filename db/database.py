@@ -4,7 +4,7 @@ import logging
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker, declarative_base
 
 logger = logging.getLogger(__name__)
@@ -34,9 +34,27 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH}"
 
+# timeout=30: chờ tối đa 30 giây khi DB đang bị khoá thay vì báo "database is locked" ngay (sau 5 giây mặc định).
+# Windows khoá file chặt hơn macOS, và luồng lên lịch + giao diện + Defender/OneDrive quét file dễ chạm nhau.
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False, "timeout": 30}
 )
+
+
+@event.listens_for(engine, "connect")
+def _sqlite_pragmas(dbapi_conn, _record) -> None:
+    """WAL: người đọc không chặn người ghi (và ngược lại). Lỗi (vd. ổ mạng không hỗ trợ WAL) thì giữ chế độ mặc định."""
+    cur = dbapi_conn.cursor()
+    try:
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA synchronous=NORMAL")   # an toàn với WAL, ít fsync hơn
+        cur.execute("PRAGMA busy_timeout=30000")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Không bật được chế độ WAL cho SQLite: {e}")
+    finally:
+        cur.close()
+
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()

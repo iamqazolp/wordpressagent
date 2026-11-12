@@ -1,4 +1,4 @@
-# Bản chốt đầy đủ (kể cả thư viện con) đã kiểm thử trên Python 3.12: pip install -r requirements.lock
+# Ban chot day du (ke ca thu vien con) da kiem thu tren Python 3.12: pip install -r requirements.lock
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
@@ -67,6 +67,7 @@ tqdm==4.70.1
 typer==0.27.2
 typing-inspection==0.4.4
 typing_extensions==4.16.0
+tzdata==2025.2; sys_platform == "win32"
 tzlocal==5.4.4
 urllib3==2.8.0
 uvicorn==0.53.0

@@ -14,6 +14,7 @@ Dữ liệu cần giữ gồm 3 thứ, thiếu một là mất mật khẩu webs
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 import tempfile
 import time
@@ -141,14 +142,28 @@ def restore_full_backup(zip_path: Path, db_path: Path | None = None, env_path: P
             safety = create_full_backup(safety_dir or DEFAULT_FULL_DIR / "truoc-khi-khoi-phuc", db_path, env_path, logo_dir)
 
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        for suffix in ("-wal", "-shm"):
-            Path(str(db_path) + suffix).unlink(missing_ok=True)
-        db_path.write_bytes(z.read(ZIP_DB))
-        if ZIP_ENV in names:
-            env_path.write_bytes(z.read(ZIP_ENV))
-        logos = [n for n in names if n.startswith(ZIP_LOGOS) and not n.endswith("/")]
-        if logos:
-            logo_dir.mkdir(parents=True, exist_ok=True)
-            for n in logos:
-                (logo_dir / Path(n).name).write_bytes(z.read(n))
+        tmp_db = db_path.with_name(db_path.name + ".restore-tmp")
+        try:
+            # Windows không cho xoá/thay file DB (và -wal/-shm) đang được app mở -> PermissionError ở đây,
+            # TRƯỚC khi đụng vào dữ liệu thật (ghi ra file tạm rồi os.replace nguyên tử).
+            for suffix in ("-wal", "-shm"):
+                Path(str(db_path) + suffix).unlink(missing_ok=True)
+            tmp_db.write_bytes(z.read(ZIP_DB))
+            os.replace(tmp_db, db_path)
+            if ZIP_ENV in names:
+                env_path.write_bytes(z.read(ZIP_ENV))
+            logos = [n for n in names if n.startswith(ZIP_LOGOS) and not n.endswith("/")]
+            if logos:
+                logo_dir.mkdir(parents=True, exist_ok=True)
+                for n in logos:
+                    (logo_dir / Path(n).name).write_bytes(z.read(n))
+        except PermissionError as e:
+            tmp_db.unlink(missing_ok=True)
+            raise BackupError(
+                "Không ghi đè được dữ liệu vì file đang được dùng (thường do ứng dụng vẫn đang chạy, "
+                "hoặc OneDrive/phần mềm diệt virus đang giữ file). Hãy TẮT ứng dụng (nút «Dừng» ở cửa sổ khởi động), "
+                f"đợi vài giây rồi thử lại. Chi tiết: {e}"
+            ) from e
+        finally:
+            tmp_db.unlink(missing_ok=True)
     return safety or zip_path

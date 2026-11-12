@@ -1,6 +1,6 @@
-# Phiên bản đã kiểm thử trên Python 3.11 và 3.12 (yêu cầu tối thiểu Python 3.11, do pandas 3).
-# Thư viện con (phụ thuộc gián tiếp, vd. numpy) do pip tự chọn đúng phiên bản theo từng bản Python;
-# nếu cần cài đặt lặp lại y hệt tuyệt đối trên Python 3.12, dùng requirements.lock.
+# Phien ban da kiem thu tren Python 3.11 va 3.12 (yeu cau toi thieu Python 3.11, do pandas 3).
+# Thu vien con (phu thuoc gian tiep, vd. numpy) do pip tu chon dung phien ban theo tung ban Python;
+# neu can cai dat lap lai y het tuyet doi tren Python 3.12, dung requirements.lock.
 
 # UI & Server
 gradio==6.28.0
@@ -31,7 +31,7 @@ cryptography==50.0.1
 tenacity==9.1.4
 nh3==0.3.7
 
-# Scheduler (Windows không có sẵn dữ liệu múi giờ: cần tzdata cho Asia/Ho_Chi_Minh)
+# Scheduler (Windows khong co san du lieu mui gio: can tzdata cho Asia/Ho_Chi_Minh)
 apscheduler==3.11.3
 tzdata; sys_platform == "win32"
 
@@ -40,4 +40,4 @@ python-dotenv==1.2.3
 
 # Image Processing
 pillow==12.3.0
-# rembg>=2.0.50  # Tùy chọn: cài khi muốn dùng tính năng tách nền AI local (pip install rembg)
+# rembg>=2.0.50  # Tuy chon: cai khi muon dung tinh nang tach nen AI local (pip install rembg)

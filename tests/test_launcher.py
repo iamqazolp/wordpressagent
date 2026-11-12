@@ -291,3 +291,32 @@ def test_kill_process_tree_also_kills_grandchildren(tmp_path):
     time.sleep(0.3)
     with pytest.raises(ProcessLookupError):
         os.kill(grandchild, 0)                                  # cháu (vd. frpc) cũng đã bị tắt
+
+
+# ── tools/install_deps.py --if-needed (run.bat / run.sh) ─────────────────────
+
+def test_install_deps_if_needed_skips_when_up_to_date_and_installs_when_stale(monkeypatch):
+    from tools import install_deps
+
+    calls = []
+    monkeypatch.setattr(install_deps.core, "install", lambda root, log, python=None: calls.append(root))
+
+    monkeypatch.setattr(install_deps.core, "needs_install", lambda root: False)
+    assert install_deps.main(["--if-needed"]) == 0 and calls == []
+
+    monkeypatch.setattr(install_deps.core, "needs_install", lambda root: True)
+    assert install_deps.main(["--if-needed"]) == 0 and len(calls) == 1
+
+    assert install_deps.main([]) == 0 and len(calls) == 2                      # không cờ: luôn cài
+
+    def boom(root, log, python=None):
+        raise install_deps.core.LauncherError("hỏng")
+
+    monkeypatch.setattr(install_deps.core, "install", boom)
+    assert install_deps.main(["--if-needed"]) == 1
+
+
+def test_run_scripts_check_requirements_before_start():
+    root = Path(__file__).resolve().parent.parent
+    assert "install_deps.py --if-needed" in (root / "run.bat").read_text(encoding="utf-8")
+    assert "install_deps.py --if-needed" in (root / "run.sh").read_text(encoding="utf-8")

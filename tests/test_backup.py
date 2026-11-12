@@ -114,3 +114,31 @@ def test_cli_roundtrip(env, monkeypatch, capsys):
     z = next((tmp / "cli").glob("*.zip"))
     assert cli.main(["restore", str(z), "--yes"]) == 0
     assert cli.main(["restore", str(tmp / "no.zip"), "--yes"]) == 1
+
+
+def test_restore_on_locked_db_raises_friendly_error_and_keeps_data(env, monkeypatch):
+    """Windows: DB đang được app mở -> os.replace báo PermissionError. Phải báo lỗi dễ hiểu, không đụng dữ liệu, không để file tạm."""
+    tmp, db, envf, logos = env
+    z = backup.create_full_backup(tmp / "out", db, envf, logos)
+    db.unlink()
+    make_db(db, "đang dùng")
+
+    def locked(src, dst):
+        raise PermissionError(32, "The process cannot access the file because it is being used by another process")
+
+    monkeypatch.setattr(backup.os, "replace", locked)
+    with pytest.raises(backup.BackupError, match="TẮT ứng dụng"):
+        backup.restore_full_backup(z, db, envf, logos, safety_dir=tmp / "safe")
+    assert read_db(db) == ["đang dùng"]
+    assert envf.read_text(encoding="utf-8") == "ENCRYPTION_KEY=abc\n"          # .env cũng chưa bị ghi đè
+    assert not list(db.parent.glob("*.restore-tmp"))
+
+
+def test_restore_clears_stale_wal_files(env):
+    tmp, db, envf, logos = env
+    z = backup.create_full_backup(tmp / "out", db, envf, logos)
+    for suffix in ("-wal", "-shm"):
+        (db.parent / (db.name + suffix)).write_bytes(b"stale")
+    backup.restore_full_backup(z, db, envf, logos, safety_dir=tmp / "safe")
+    assert not (db.parent / (db.name + "-wal")).exists() and not (db.parent / (db.name + "-shm")).exists()
+    assert read_db(db) == ["gốc"]
